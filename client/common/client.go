@@ -98,4 +98,5 @@ func (c *Client) gracefulShutdown() {
 		c.conn.Close()
 	}
 	log.Infof("action: shutdown | result: success | client_id: %v", c.config.ID)
+	os.Exit(0)
 }
