@@ -10,8 +10,8 @@ DEFAULT_CLIENT_COUNT=1
 OUTPUT_FILE=${1:-$DEFAULT_OUTPUT_FILE}
 CLIENT_COUNT=${2:-$DEFAULT_CLIENT_COUNT}
 
-if [[ ! "$CLIENT_COUNT" =~ ^[1-9][0-9]*$ ]]; then
-    echo "Error: CLIENT_COUNT must be a positive integer, got: $CLIENT_COUNT" >&2
+if [[ ! "$CLIENT_COUNT" =~ ^[0-9]+$ ]]; then
+    echo "Error: CLIENT_COUNT must be a non-negative integer, got: $CLIENT_COUNT" >&2
     echo "Usage: $0 [OUTPUT_FILE] [CLIENT_COUNT]" >&2
     exit 1
 fi
