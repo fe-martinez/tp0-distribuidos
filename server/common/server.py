@@ -3,6 +3,8 @@ import logging
 import signal
 import sys
 
+from server.common.utils import Bet, store_bets
+
 
 class Server:
     def __init__(self, port, listen_backlog):
@@ -34,14 +36,20 @@ class Server:
         client socket will also be closed
         """
         try:
-            # TODO: Modify the receive to avoid short-reads
-            msg = client_sock.recv(1024).rstrip().decode('utf-8')
+            msg = self.__read_message(client_sock)
             addr = client_sock.getpeername()
             logging.info(f'action: receive_message | result: success | ip: {addr[0]} | msg: {msg}')
-            # TODO: Modify the send to avoid short-writes
+
+            fields = msg.split(';')
+            if len(fields) < 6:
+                raise ValueError("Invalid message format")
+            
+            bet = Bet(fields[0], fields[1], fields[2], fields[3], fields[4], fields[5])
+            print(f'action: apuesta_enviada | result: success | dni: {bet.document} | numero: {bet.number}')
+            store_bets([bet])
             client_sock.send("{}\n".format(msg).encode('utf-8'))
         except OSError as e:
-            logging.error("action: receive_message | result: fail | error: {e}")
+            logging.error(f'action: receive_message | result: fail | error: {e}')
         finally:
             if client_sock in self._active_connections:
                 self._active_connections.remove(client_sock)
@@ -80,3 +88,18 @@ class Server:
         self._server_socket.close()
         logging.info('action: shutdown | result: success')
         sys.exit(0)
+
+    def __read_message(self, client_sock):
+        """
+        Read message from a specific client socket
+
+        If a problem arises in the communication with the client, the
+        client socket will be closed
+        """
+        chunks = []
+        while True:
+            chunk = client_sock.recv(1024)
+            if not chunk:
+                break
+            chunks.append(chunk.decode('utf-8'))
+        return ''.join(chunks).strip()

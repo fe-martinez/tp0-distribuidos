@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -20,6 +21,14 @@ type ClientConfig struct {
 	ServerAddress string
 	LoopAmount    int
 	LoopPeriod    time.Duration
+}
+
+type Bet struct {
+	Name        string
+	Surname     string
+	ClientID    string
+	dateOfBirth string
+	betNumber   int
 }
 
 // Client Entity that encapsulates how
@@ -59,15 +68,27 @@ func (c *Client) StartClientLoop() {
 	// Messages if the message amount threshold has not been surpassed
 	go c.gracefulShutdown()
 	for msgID := 1; msgID <= c.config.LoopAmount; msgID++ {
-		// Create the connection the server in every loop iteration. Send an
 		c.createClientSocket()
-		// TODO: Modify the send to avoid short-write
-		fmt.Fprintf(
-			c.conn,
-			"[CLIENT %v] Message N°%v\n",
-			c.config.ID,
-			msgID,
-		)
+
+		bet, err := LoadBetFromEnv()
+		if err != nil {
+			log.Errorf("action: load_bet | result: fail | client_id: %v | error: %v",
+				c.config.ID,
+				err,
+			)
+			return
+		}
+
+		serializedBet := serializeBet(bet, c.config.ID)
+		err = sendMessageInChunks(c.conn, serializedBet)
+		if err != nil {
+			log.Errorf("action: send_message | result: fail | client_id: %v | error: %v",
+				c.config.ID,
+				err,
+			)
+			return
+		}
+
 		msg, err := bufio.NewReader(c.conn).ReadString('\n')
 		c.conn.Close()
 
@@ -84,7 +105,6 @@ func (c *Client) StartClientLoop() {
 			msg,
 		)
 
-		// Wait a time between sending one message and the next one
 		time.Sleep(c.config.LoopPeriod)
 
 	}
@@ -102,4 +122,50 @@ func (c *Client) gracefulShutdown() {
 	}
 	log.Infof("action: shutdown | result: success | client_id: %v", c.config.ID)
 	os.Exit(0)
+}
+
+func serializeBet(bet Bet, agencyId string) []byte {
+	serialized := fmt.Sprintf("%s;%s;%s;%s;%s;%d", agencyId, bet.Name, bet.Surname, bet.ClientID, bet.dateOfBirth, bet.betNumber)
+	return []byte(serialized)
+}
+
+func LoadBetFromEnv() (Bet, error) {
+	name := os.Getenv("BET_NAME")
+	surname := os.Getenv("BET_SURNAME")
+	clientID := os.Getenv("BET_CLIENT_ID")
+	dateOfBirth := os.Getenv("BET_DATE_OF_BIRTH")
+	betNumberStr := os.Getenv("BET_NUMBER")
+
+	betNumber, err := strconv.Atoi(betNumberStr)
+	if err != nil {
+		return Bet{}, fmt.Errorf("invalid BET_NUMBER: %v", err)
+	}
+
+	return Bet{
+		Name:        name,
+		Surname:     surname,
+		ClientID:    clientID,
+		dateOfBirth: dateOfBirth,
+		betNumber:   betNumber,
+	}, nil
+}
+
+func sendMessageInChunks(conn net.Conn, message []byte) error {
+	const chunkSize = 1024
+	totalLength := len(message)
+	sentBytes := 0
+
+	for sentBytes < totalLength {
+		end := sentBytes + chunkSize
+		if end > totalLength {
+			end = totalLength
+		}
+
+		n, err := conn.Write(message[sentBytes:end])
+		if err != nil {
+			return err
+		}
+		sentBytes += n
+	}
+	return nil
 }
