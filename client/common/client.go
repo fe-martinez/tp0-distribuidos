@@ -80,6 +80,7 @@ func (c *Client) StartClientLoop() {
 		}
 
 		serializedBet := serializeBet(bet, c.config.ID)
+		log.Infof("bet: %v", string(serializedBet))
 		err = sendMessageInChunks(c.conn, serializedBet)
 		if err != nil {
 			log.Errorf("action: send_message | result: fail | client_id: %v | error: %v",
