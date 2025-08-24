@@ -4,6 +4,9 @@ import (
 	"bufio"
 	"fmt"
 	"net"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/op/go-logging"
@@ -89,11 +92,11 @@ func (c *Client) StartClientLoop() {
 }
 
 func (c *Client) gracefulShutdown() {
-	quitChan := make(chan struct{})
+	quitChan := make(chan os.Signal, 1)
 	signal.Notify(quitChan, syscall.SIGINT, syscall.SIGTERM)
 
-	s := <-quitChan
-	log.Infof("action: shutdown | result: in_progress | signal: %v", s)
+	sig := <-quitChan
+	log.Infof("action: shutdown | result: in_progress | signal: %v", sig)
 	if c.conn != nil {
 		c.conn.Close()
 	}
