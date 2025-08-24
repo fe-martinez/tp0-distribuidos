@@ -5,20 +5,25 @@ SERVER_CONTAINER_NAME="server"
 TEMP_CONTAINER_NAME="temp-nc-container"
 NETWORK_NAME="tp0_testing_net"
 SERVER_PORT=12345
+TIMEOUT=5
 
 if ! docker network inspect "$NETWORK_NAME" >/dev/null 2>&1; then
-  echo "error: Docker network '$NETWORK_NAME' does not exist."
-  exit 1
+  echo "action: test_echo_server | result: fail"
+  exit 0
 fi
 
-# Add a timeout to avoid hanging indefinitely
-TIMEOUT=5
-docker run --rm \
+TEST_OUTPUT=$(docker run --rm \
     --name $TEMP_CONTAINER_NAME \
     --network $NETWORK_NAME \
-    busybox sh -c "echo '$TEST_MESSAGE' | timeout $TIMEOUT nc $SERVER_CONTAINER_NAME $SERVER_PORT | grep -q '$TEST_MESSAGE'"
+    busybox sh -c "echo '$TEST_MESSAGE' | timeout $TIMEOUT nc $SERVER_CONTAINER_NAME $SERVER_PORT" 2>&1)
 
-if [ $? -eq 0 ]; then
+DOCKER_EXIT=$?
+if [ $DOCKER_EXIT -ne 0 ]; then
+  echo "action: test_echo_server | result: fail"
+  exit 0
+fi
+
+if [ "$TEST_OUTPUT" = "$TEST_MESSAGE" ]; then
   echo "action: test_echo_server | result: success"
 else
   echo "action: test_echo_server | result: fail"
