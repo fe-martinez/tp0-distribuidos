@@ -130,15 +130,15 @@ func serializeBet(bet Bet, agencyId string) []byte {
 }
 
 func LoadBetFromEnv() (Bet, error) {
-	name := os.Getenv("BET_NAME")
-	surname := os.Getenv("BET_SURNAME")
-	clientID := os.Getenv("BET_CLIENT_ID")
-	dateOfBirth := os.Getenv("BET_DATE_OF_BIRTH")
-	betNumberStr := os.Getenv("BET_NUMBER")
+	name := os.Getenv("NOMBRE")
+	surname := os.Getenv("APELLIDO")
+	clientID := os.Getenv("DOCUMENTO")
+	dateOfBirth := os.Getenv("NACIMIENTO")
+	betNumberStr := os.Getenv("NUMERO")
 
 	betNumber, err := strconv.Atoi(betNumberStr)
 	if err != nil {
-		return Bet{}, fmt.Errorf("invalid BET_NUMBER: %v", err)
+		return Bet{}, fmt.Errorf("invalid NUMERO: %v", err)
 	}
 
 	return Bet{
