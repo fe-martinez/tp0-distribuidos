@@ -11,10 +11,12 @@ if ! docker network inspect "$NETWORK_NAME" >/dev/null 2>&1; then
   exit 1
 fi
 
+# Add a timeout to avoid hanging indefinitely
+TIMEOUT=5
 docker run --rm \
     --name $TEMP_CONTAINER_NAME \
     --network $NETWORK_NAME \
-    busybox sh -c "echo '$TEST_MESSAGE' | nc $SERVER_CONTAINER_NAME $SERVER_PORT | grep -q '$TEST_MESSAGE'"
+    busybox sh -c "echo '$TEST_MESSAGE' | timeout $TIMEOUT nc $SERVER_CONTAINER_NAME $SERVER_PORT | grep -q '$TEST_MESSAGE'"
 
 if [ $? -eq 0 ]; then
   echo "action: test_echo_server | result: success"
