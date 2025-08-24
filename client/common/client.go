@@ -54,10 +54,10 @@ func (c *Client) createClientSocket() error {
 func (c *Client) StartClientLoop() {
 	// There is an autoincremental msgID to identify every message sent
 	// Messages if the message amount threshold has not been surpassed
+	go c.gracefulShutdown()
 	for msgID := 1; msgID <= c.config.LoopAmount; msgID++ {
 		// Create the connection the server in every loop iteration. Send an
 		c.createClientSocket()
-
 		// TODO: Modify the send to avoid short-write
 		fmt.Fprintf(
 			c.conn,
@@ -86,4 +86,16 @@ func (c *Client) StartClientLoop() {
 
 	}
 	log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
+}
+
+func (c *Client) gracefulShutdown() {
+	quitChan := make(chan struct{})
+	signal.Notify(quitChan, syscall.SIGINT, syscall.SIGTERM)
+
+	s := <-quitChan
+	log.Infof("action: shutdown | result: in_progress | signal: %v", s)
+	if c.conn != nil {
+		c.conn.Close()
+	}
+	log.Infof("action: shutdown | result: success | client_id: %v", c.config.ID)
 }

@@ -1,5 +1,7 @@
 import socket
 import logging
+import signal
+import sys
 
 
 class Server:
@@ -8,6 +10,7 @@ class Server:
         self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_socket.bind(('', port))
         self._server_socket.listen(listen_backlog)
+        self._active_connections = []
 
     def run(self):
         """
@@ -17,9 +20,8 @@ class Server:
         communication with a client. After client with communucation
         finishes, servers starts to accept new connections again
         """
+        self.setup_signal_handlers()
 
-        # TODO: Modify this program to handle signal to graceful shutdown
-        # the server
         while True:
             client_sock = self.__accept_new_connection()
             self.__handle_client_connection(client_sock)
@@ -41,6 +43,8 @@ class Server:
         except OSError as e:
             logging.error("action: receive_message | result: fail | error: {e}")
         finally:
+            if client_sock in self._active_connections:
+                self._active_connections.remove(client_sock)
             client_sock.close()
 
     def __accept_new_connection(self):
@@ -55,4 +59,24 @@ class Server:
         logging.info('action: accept_connections | result: in_progress')
         c, addr = self._server_socket.accept()
         logging.info(f'action: accept_connections | result: success | ip: {addr[0]}')
+        self._active_connections.append(c)
         return c
+    
+    def setup_signal_handlers(self):
+        signal.signal(signal.SIGINT, self.signal_handler)
+        signal.signal(signal.SIGTERM, self.signal_handler)
+
+    def signal_handler(self, sig, frame):
+        logging.info(f'action: shutdown | result: in_progress | signal: {sig}')
+        
+        for client_sock in self._active_connections[:]:
+            try:
+                client_sock.close()
+                self._active_connections.remove(client_sock)
+                logging.info(f'action: close_client | result: success | client: {client_sock.getpeername()[0]}')
+            except OSError as e:
+                logging.error(f'action: close_client | result: fail | error: {e}')
+        
+        self._server_socket.close()
+        logging.info('action: shutdown | result: success')
+        sys.exit(0)

@@ -4,7 +4,8 @@ from configparser import ConfigParser
 from common.server import Server
 import logging
 import os
-
+import signal
+import sys
 
 def initialize_config():
     """ Parse env variables or config file to find program config params
