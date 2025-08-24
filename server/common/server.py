@@ -34,6 +34,7 @@ class Server:
         client socket will also be closed
         """
         try:
+            logging.info('action: receive_message | result: in_progress')
             msg = self.__read_message(client_sock)
             addr = client_sock.getpeername()
             logging.info(f'action: receive_message | result: success | ip: {addr[0]} | msg: {msg}')
@@ -100,4 +101,5 @@ class Server:
             if not chunk:
                 break
             chunks.append(chunk.decode('utf-8'))
+        logging.info(f"Received chunks: {chunks}")
         return ''.join(chunks).strip()
