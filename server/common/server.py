@@ -2,9 +2,7 @@ import socket
 import logging
 import signal
 import sys
-
-from server.common.utils import Bet, store_bets
-
+from common.utils import Bet, store_bets
 
 class Server:
     def __init__(self, port, listen_backlog):
