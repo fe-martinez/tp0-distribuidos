@@ -98,6 +98,7 @@ class Server:
         chunks = []
         while True:
             chunk = client_sock.recv(1024)
+            logging.info(f"Received chunk: {chunk}")
             if not chunk:
                 break
             chunks.append(chunk.decode('utf-8'))
