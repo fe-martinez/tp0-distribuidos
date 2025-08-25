@@ -105,7 +105,10 @@ func (c *Client) StartClientLoop() {
 			c.config.ID,
 			msg,
 		)
-
+		log.Infof("action: loop_wait | result: success | client_id: %v | wait_time: %v",
+			c.config.ID,
+			c.config.LoopPeriod,
+		)
 		time.Sleep(c.config.LoopPeriod)
 
 	}
