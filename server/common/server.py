@@ -102,5 +102,7 @@ class Server:
             if not chunk:
                 break
             chunks.append(chunk.decode('utf-8'))
+            if '\n' in chunk.decode('utf-8'):
+                break
         logging.info(f"Received chunks: {chunks}")
         return ''.join(chunks).strip()
