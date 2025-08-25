@@ -44,8 +44,8 @@ class Server:
                 raise ValueError("Invalid message format")
             
             bet = Bet(fields[0], fields[1], fields[2], fields[3], fields[4], fields[5])
-            print(f'action: apuesta_enviada | result: success | dni: {bet.document} | numero: {bet.number}')
             store_bets([bet])
+            logging.info(f'action: apuesta_almacenada | result: success | dni: {bet.document} | numero: {bet.number}')
             client_sock.send("{}\n".format(msg).encode('utf-8'))
         except OSError as e:
             logging.error(f'action: receive_message | result: fail | error: {e}')
