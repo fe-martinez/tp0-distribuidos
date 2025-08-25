@@ -126,7 +126,7 @@ func (c *Client) gracefulShutdown() {
 }
 
 func serializeBet(bet Bet, agencyId string) []byte {
-	serialized := fmt.Sprintf("%s;%s;%s;%s;%s;%d", agencyId, bet.Name, bet.Surname, bet.ClientID, bet.dateOfBirth, bet.betNumber)
+	serialized := fmt.Sprintf("%s;%s;%s;%s;%s;%d\n", agencyId, bet.Name, bet.Surname, bet.ClientID, bet.dateOfBirth, bet.betNumber)
 	return []byte(serialized)
 }
 
@@ -168,5 +168,7 @@ func sendMessageInChunks(conn net.Conn, message []byte) error {
 		}
 		sentBytes += n
 	}
+
+	log.Infof("action: send_message | result: success | bytes_sent: %d", sentBytes)
 	return nil
 }
