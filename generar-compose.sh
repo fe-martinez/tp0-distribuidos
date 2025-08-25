@@ -28,6 +28,8 @@ services:
     entrypoint: python3 ./main.py
     environment:
       - PYTHONUNBUFFERED=1
+    volumes:
+      - ./server/config.ini:/app/config.ini:ro
     networks:
       - testing_net
 EOL
@@ -46,6 +48,8 @@ for i in $(seq 1 "$CLIENT_COUNT"); do
       - DOCUMENTO=30904465
       - NACIMIENTO=1999-03-17
       - NUMERO=7574
+    volumes:
+      - ./client/config.yaml:/config.yaml:ro
     networks:
       - testing_net
     depends_on:
