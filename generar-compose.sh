@@ -28,7 +28,8 @@ services:
     entrypoint: python3 ./main.py
     environment:
       - PYTHONUNBUFFERED=1
-      - LOGGING_LEVEL=DEBUG
+    volumes:
+      - ./server/config.ini:/app/config.ini:ro
     networks:
       - testing_net
 EOL
@@ -42,7 +43,8 @@ for i in $(seq 1 "$CLIENT_COUNT"); do
     entrypoint: /client
     environment:
       - CLI_ID=${i}
-      - CLI_LOG_LEVEL=DEBUG
+    volumes:
+      - ./client/config.yaml:/config.yaml:ro
     networks:
       - testing_net
     depends_on:
