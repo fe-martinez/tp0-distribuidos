@@ -3,7 +3,6 @@ package common
 import (
 	"bufio"
 	"fmt"
-	"io"
 	"net"
 	"strings"
 )
@@ -13,6 +12,18 @@ type Response struct {
 	Message string
 }
 
+func writeAll(conn net.Conn, msg []byte) error {
+	totalSent := 0
+	for totalSent < len(msg) {
+		sent, err := conn.Write(msg[totalSent:])
+		if err != nil {
+			return err
+		}
+		totalSent += sent
+	}
+	return nil
+}
+
 func SendBet(serverAddress string, bet Bet, agencyID string) (Response, error) {
 	conn, err := net.Dial("tcp", serverAddress)
 	if err != nil {
@@ -20,32 +31,29 @@ func SendBet(serverAddress string, bet Bet, agencyID string) (Response, error) {
 	}
 	defer conn.Close()
 
-	message := fmt.Sprintf("%s;%s;%s;%s;%s;%d\n", agencyID, bet.Name, bet.Surname, bet.ClientID, bet.DateOfBirth, bet.BetNumber)
+	message := fmt.Sprintf(
+		"%s;%s;%s;%s;%s;%d\n",
+		agencyID,
+		bet.Name,
+		bet.Surname,
+		bet.ClientID,
+		bet.DateOfBirth,
+		bet.BetNumber,
+	)
 
-	if _, err := io.WriteString(conn, message); err != nil {
+	if err := writeAll(conn, []byte(message)); err != nil {
 		return Response{}, fmt.Errorf("failed to send message: %w", err)
 	}
 
-	response, err := bufio.NewReader(conn).ReadString('\n')
+	responseStr, err := bufio.NewReader(conn).ReadString('\n')
 	if err != nil {
 		return Response{}, fmt.Errorf("failed to receive response: %w", err)
 	}
 
-	response = strings.TrimSpace(response)
-	log.Infof("Received raw response: '%s'", response)
-
-	parts := strings.Split(response, ",")
+	parts := strings.Split(strings.TrimSpace(responseStr), ";")
 	if len(parts) < 2 {
-		return Response{}, fmt.Errorf("invalid server response format: '%s'", response)
+		return Response{}, fmt.Errorf("invalid server response format: '%s'", responseStr)
 	}
 
-	status := parts[0]
-	value := parts[1]
-
-	// Handle additional success statuses if needed
-	if status != "ok" && status != "success" {
-		return Response{}, fmt.Errorf("server returned failure status: '%s', message: '%s'", status, value)
-	}
-
-	return Response{Status: status, Message: value}, nil
+	return Response{Status: parts[0], Message: parts[1]}, nil
 }

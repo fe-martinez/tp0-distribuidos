@@ -27,6 +27,6 @@ class Protocol:
         }
 
     def send_response(client_sock, response: dict) -> None:
-        response_str = f"{response['status']},{response['message']}\n"
+        response_str = f"{response['status']};{response['message']}\n"
         logging.debug(f"Sending response: {response_str.strip()}")
         client_sock.sendall(response_str.encode('utf-8'))
