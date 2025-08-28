@@ -4,8 +4,8 @@
 # Usage: ./generar-compose.sh [OUTPUT_FILE] [CLIENT_COUNT]
 # Example: ./generar-compose.sh docker-compose.yaml 3
 
-DEFAULT_OUTPUT_FILE="docker-compose.yaml"
-DEFAULT_CLIENT_COUNT=1
+DEFAULT_OUTPUT_FILE="docker-compose-dev.yaml"
+DEFAULT_CLIENT_COUNT=2
 
 OUTPUT_FILE=${1:-$DEFAULT_OUTPUT_FILE}
 CLIENT_COUNT=${2:-$DEFAULT_CLIENT_COUNT}
@@ -25,12 +25,11 @@ services:
   server:
     container_name: server
     image: server:latest
-    entrypoint: python3 ./main.py
+    entrypoint: python3 /main.py
     environment:
       - PYTHONUNBUFFERED=1
-      - LOGGING_LEVEL=DEBUG
     volumes:
-      - ./server/config.ini:/app/config.ini:ro
+      - ./server/config.ini:/config.ini:ro
     networks:
       - testing_net
 EOL
@@ -44,7 +43,6 @@ for i in $(seq 1 "$CLIENT_COUNT"); do
     entrypoint: /client
     environment:
       - CLI_ID=${i}
-      - CLI_LOG_LEVEL=DEBUG
     volumes:
       - ./client/config.yaml:/config.yaml:ro
     networks:
