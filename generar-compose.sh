@@ -29,7 +29,7 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
     volumes:
-      - ./server/config.ini:/app/config.ini:ro
+      - ./server/config.ini:/config.ini:ro
     networks:
       - testing_net
 EOL
