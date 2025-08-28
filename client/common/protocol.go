@@ -32,7 +32,7 @@ func SendBet(serverAddress string, bet Bet, agencyID string) (Response, error) {
 	}
 
 	response = strings.TrimSpace(response)
-	log.Infof("Received raw response: '%s'", response) // Log the full server response
+	log.Infof("Received raw response: '%s'", response)
 
 	parts := strings.Split(response, ",")
 	if len(parts) < 2 {

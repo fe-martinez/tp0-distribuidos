@@ -54,7 +54,7 @@ func (c *Client) StartClientLoop() {
 			continue
 		}
 
-		if response.Status == "ok" {
+		if response.Status == "ok" || response.Status == "success" {
 			log.Infof("action: apuesta_enviada | result: success | dni: %s | numero: %d", bet.ClientID, bet.BetNumber)
 		} else {
 			log.Warningf("action: apuesta_enviada | result: fail | client_id: %v | server_error: %s", c.config.ID, response.Message)
