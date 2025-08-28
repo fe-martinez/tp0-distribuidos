@@ -21,9 +21,9 @@ class BetHandler:
             
             store_bets([bet])
             logging.info(f'action: apuesta_almacenada | result: success | dni: {bet.document} | numero: {bet.number}')
-            response = f"Bet for number {bet.number} stored successfully with ID: {bet.document}"
+            response = {"status": "success", "message": "Bet stored successfully."}
             return response
 
         except (ValueError, TypeError) as e:
             logging.error(f"action: process_bet | result: fail | error: {e}")
-            return f"Error processing bet: {e}"
+            return {"status": "error", "message": f"Error processing bet: {e}"}
