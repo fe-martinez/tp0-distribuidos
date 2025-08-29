@@ -103,7 +103,7 @@ func main() {
 		ID:            v.GetString("id"),
 		MaxBatchSize:  8192, // 8kB limit
 		MaxBatchBets:  v.GetInt("batch.maxAmount"),
-		DataFilePath:  fmt.Sprintf("/.data/agency-%v.csv", v.GetString("id")),
+		DataFilePath:  fmt.Sprintf("/data/agency-%v.csv", v.GetString("id")),
 	}
 
 	client, err := common.NewClient(clientConfig)
