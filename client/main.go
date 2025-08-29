@@ -37,6 +37,8 @@ func InitConfig() (*viper.Viper, error) {
 	v.BindEnv("loop", "period")
 	v.BindEnv("loop", "amount")
 	v.BindEnv("log", "level")
+	v.BindEnv("batch", "maxAmount")
+	v.BindEnv("data", "filePath")
 
 	// Try to read configuration from config file. If config file
 	// does not exists then ReadInConfig will fail but configuration
@@ -48,9 +50,18 @@ func InitConfig() (*viper.Viper, error) {
 	}
 
 	// Parse time.Duration variables and return an error if those variables cannot be parsed
-
 	if _, err := time.ParseDuration(v.GetString("loop.period")); err != nil {
 		return nil, errors.Wrapf(err, "Could not parse CLI_LOOP_PERIOD env var as time.Duration.")
+	}
+
+	// Validate batch max amount is positive
+	if v.GetInt("batch.maxAmount") <= 0 {
+		return nil, errors.New("batch.maxAmount must be a positive integer")
+	}
+
+	// Validate data file path is provided
+	if v.GetString("data.filePath") == "" {
+		return nil, errors.New("data.filePath is required")
 	}
 
 	return v, nil
@@ -81,12 +92,14 @@ func InitLogger(logLevel string) error {
 // PrintConfig Print all the configuration parameters of the program.
 // For debugging purposes only
 func PrintConfig(v *viper.Viper) {
-	log.Infof("action: config | result: success | client_id: %s | server_address: %s | loop_amount: %v | loop_period: %v | log_level: %s",
+	log.Infof("action: config | result: success | client_id: %s | server_address: %s | loop_amount: %v | loop_period: %v | log_level: %s | batch_max_amount: %v | data_file_path: %s",
 		v.GetString("id"),
 		v.GetString("server.address"),
 		v.GetInt("loop.amount"),
 		v.GetDuration("loop.period"),
 		v.GetString("log.level"),
+		v.GetInt("batch.maxAmount"),
+		v.GetString("data.filePath"),
 	)
 }
 
@@ -108,8 +121,15 @@ func main() {
 		ID:            v.GetString("id"),
 		LoopAmount:    v.GetInt("loop.amount"),
 		LoopPeriod:    v.GetDuration("loop.period"),
+		MaxBatchSize:  8192, // 8kB limit
+		MaxBatchBets:  v.GetInt("batch.maxAmount"),
+		DataFilePath:  v.GetString("data.filePath"),
 	}
 
-	client := common.NewClient(clientConfig)
+	client, err := common.NewClient(clientConfig)
+	if err != nil {
+		log.Criticalf("%s", err)
+		return
+	}
 	client.StartClientLoop()
 }

@@ -43,13 +43,9 @@ for i in $(seq 1 "$CLIENT_COUNT"); do
     entrypoint: /client
     environment:
       - CLI_ID=${i}
-      - NOMBRE=Santiago Lionel
-      - APELLIDO=Lorca
-      - DOCUMENTO=30904465
-      - NACIMIENTO=1999-03-17
-      - NUMERO=7574
     volumes:
       - ./client/config.yaml:/config.yaml:ro
+      - ./.data/dataset:/data:ro
     networks:
       - testing_net
     depends_on:

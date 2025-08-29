@@ -1,7 +1,10 @@
 package common
 
 import (
-	"errors"
+	"bufio"
+	"context"
+	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -17,58 +20,91 @@ type ClientConfig struct {
 	ServerAddress string
 	LoopAmount    int
 	LoopPeriod    time.Duration
+	MaxBatchSize  int
+	MaxBatchBets  int
+	DataFilePath  string
 }
 
 type Client struct {
-	config ClientConfig
+	config  ClientConfig
+	file    *os.File
+	scanner *bufio.Scanner
+	Conn    net.Conn
 }
 
-func NewClient(config ClientConfig) *Client {
-	return &Client{config: config}
+// NewClient still prepares the client but doesn't connect yet.
+func NewClient(config ClientConfig) (*Client, error) {
+	file, err := os.Open(config.DataFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open data file: %w", err)
+	}
+	return &Client{
+		config:  config,
+		file:    file,
+		scanner: bufio.NewScanner(file),
+	}, nil
+}
+
+func (c *Client) Connect() error {
+	conn, err := net.DialTimeout("tcp", c.config.ServerAddress, ConnectionTimeout)
+	if err != nil {
+		return fmt.Errorf("could not connect to server: %w", err)
+	}
+	c.Conn = conn
+	log.Infof("Client %s connected to %s", c.config.ID, c.config.ServerAddress)
+	return nil
+}
+
+func (c *Client) Close() {
+	if c.file != nil {
+		c.file.Close()
+	}
+	if c.Conn != nil {
+		c.Conn.Close()
+	}
+	log.Infof("Client %s connection closed.", c.config.ID)
 }
 
 func (c *Client) StartClientLoop() {
-	log.Infof("Client %s starting loop...", c.config.ID)
+	if err := c.Connect(); err != nil {
+		log.Errorf("Client %s failed to connect: %v", c.config.ID, err)
+		return
+	}
+	defer c.Close()
 
-	shutdownChan := make(chan os.Signal, 1)
-	signal.Notify(shutdownChan, syscall.SIGINT, syscall.SIGTERM)
-	defer signal.Stop(shutdownChan)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
-	for msgID := 1; msgID <= c.config.LoopAmount; msgID++ {
-		select {
-		case <-shutdownChan:
-			log.Infof("Client %s stopped due to shutdown signal", c.config.ID)
-			return
-		default:
-		}
+	var overflowBet *Bet = nil
 
-		bet, err := LoadBetFromEnv()
-		if err != nil {
-			log.Errorf("action: load_bet | result: fail | client_id: %v | error: %v", c.config.ID, err)
+	for {
+		if ctx.Err() != nil {
+			log.Infof("Client %s stopped due to shutdown signal.", c.config.ID)
 			return
 		}
 
-		response, err := SendBet(c.config.ServerAddress, bet, c.config.ID)
+		batchResult, err := CreateBatch(c.scanner, c.config.MaxBatchSize, c.config.MaxBatchBets, overflowBet)
 		if err != nil {
-			var protocolErr ProtocolError
-			if errors.As(err, &protocolErr) {
-				log.Errorf("action: send_bet | result: fail | client_id: %v | error_type: protocol_error | details: %v", c.config.ID, protocolErr.Message)
-			} else {
-				log.Errorf("action: send_bet | result: fail | client_id: %v | error_type: general | error: %v", c.config.ID, err)
+			log.Errorf("Failed to create batch: %v", err)
+			return
+		}
+
+		overflowBet = batchResult.OverflowBet
+
+		if len(batchResult.Batch.bets) > 0 {
+			response, err := SendBatch(c.Conn, batchResult.Batch, c.config.ID)
+			if err != nil {
+				log.Errorf("Failed to send batch: %v", err)
+				return
 			}
-			time.Sleep(c.config.LoopPeriod)
-			continue
+			log.Infof("Client %s sent batch with %d bets. Server response: %s - %s", c.config.ID, len(batchResult.Batch.bets), response.Status, response.Message)
 		}
 
-		if response.Status == "ok" || response.Status == "success" {
-			log.Infof("action: apuesta_enviada | result: success | dni: %s | numero: %d", bet.ClientID, bet.BetNumber)
-		} else {
-			log.Warningf("action: apuesta_enviada | result: fail | client_id: %v | server_error: %s", c.config.ID, response.Message)
+		if len(batchResult.Batch.bets) == 0 && overflowBet == nil {
+			log.Infof("End of file reached. Client finished processing.")
+			break
 		}
-
-		log.Infof("action: receive_message | result: success | client_id: %v | msg: %s;%s", c.config.ID, response.Status, response.Message)
-		time.Sleep(c.config.LoopPeriod)
 	}
 
-	log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
+	log.Infof("Client %s finished sending all bets.", c.config.ID)
 }

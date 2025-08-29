@@ -46,25 +46,20 @@ func writeAll(conn net.Conn, msg []byte) error {
 	return nil
 }
 
-func SendBet(serverAddress string, bet Bet, agencyID string) (Response, error) {
-	conn, err := net.DialTimeout("tcp", serverAddress, ConnectionTimeout)
-	if err != nil {
-		return Response{}, fmt.Errorf("could not connect to server: %w", err)
+func SendBatch(conn net.Conn, batch Batch, agencyID string) (Response, error) {
+	if err := conn.SetWriteDeadline(time.Now().Add(ConnectionTimeout)); err != nil {
+		return Response{}, fmt.Errorf("failed to set write timeout: %w", err)
 	}
-	defer conn.Close()
 
-	message := fmt.Sprintf(
-		"%s;%s;%s;%s;%s;%d\n",
-		agencyID,
-		bet.Name,
-		bet.Surname,
-		bet.ClientID,
-		bet.DateOfBirth,
-		bet.BetNumber,
-	)
+	var builder strings.Builder
+	builder.WriteString(fmt.Sprintf("%s;%d\n", agencyID, len(batch.bets)))
 
-	if err := writeAll(conn, []byte(message)); err != nil {
-		return Response{}, ProtocolError{Message: "failed to send message", Err: err}
+	for _, bet := range batch.bets {
+		builder.WriteString(bet.SerializeBet())
+	}
+
+	if err := writeAll(conn, []byte(builder.String())); err != nil {
+		return Response{}, ProtocolError{Message: "failed to send batch message", Err: err}
 	}
 
 	if err := conn.SetReadDeadline(time.Now().Add(ReadTimeout)); err != nil {
@@ -73,13 +68,13 @@ func SendBet(serverAddress string, bet Bet, agencyID string) (Response, error) {
 
 	responseStr, err := bufio.NewReader(conn).ReadString('\n')
 	if err != nil {
-		return Response{}, ProtocolError{Message: "failed to receive response", Err: err}
+		return Response{}, ProtocolError{Message: "failed to receive response for batch", Err: err}
 	}
 
 	parts := strings.Split(strings.TrimSpace(responseStr), ";")
 	if len(parts) != 2 {
 		return Response{}, ProtocolError{
-			Message: fmt.Sprintf("invalid server response format: expected %d fields, got %d", 2, len(parts)),
+			Message: fmt.Sprintf("invalid server response format: expected 2 fields, got %d", len(parts)),
 		}
 	}
 
