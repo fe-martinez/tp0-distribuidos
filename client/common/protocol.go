@@ -11,6 +11,7 @@ import (
 const (
 	ConnectionTimeout = 10 * time.Second
 	ReadTimeout       = 5 * time.Second
+	WriteTimeout      = 5 * time.Second
 )
 
 type Response struct {
@@ -46,16 +47,16 @@ func writeAll(conn net.Conn, msg []byte) error {
 	return nil
 }
 
-func SendBatch(conn net.Conn, batch Batch, agencyID string) (Response, error) {
-	if err := conn.SetWriteDeadline(time.Now().Add(ConnectionTimeout)); err != nil {
-		return Response{}, fmt.Errorf("failed to set write timeout: %w", err)
-	}
-
+func SendBatch(conn net.Conn, reader *bufio.Reader, batch Batch, agencyID string) (Response, error) {
 	var builder strings.Builder
 	builder.WriteString(fmt.Sprintf("%s;%d\n", agencyID, len(batch.bets)))
 
 	for _, bet := range batch.bets {
 		builder.WriteString(bet.SerializeBet())
+	}
+
+	if err := conn.SetWriteDeadline(time.Now().Add(WriteTimeout)); err != nil {
+		return Response{}, fmt.Errorf("failed to set write timeout: %w", err)
 	}
 
 	if err := writeAll(conn, []byte(builder.String())); err != nil {
@@ -66,7 +67,7 @@ func SendBatch(conn net.Conn, batch Batch, agencyID string) (Response, error) {
 		return Response{}, fmt.Errorf("failed to set read timeout: %w", err)
 	}
 
-	responseStr, err := bufio.NewReader(conn).ReadString('\n')
+	responseStr, err := reader.ReadString('\n')
 	if err != nil {
 		return Response{}, ProtocolError{Message: "failed to receive response for batch", Err: err}
 	}

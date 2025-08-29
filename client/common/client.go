@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/op/go-logging"
 )
@@ -18,8 +17,6 @@ var log = logging.MustGetLogger("log")
 type ClientConfig struct {
 	ID            string
 	ServerAddress string
-	LoopAmount    int
-	LoopPeriod    time.Duration
 	MaxBatchSize  int
 	MaxBatchBets  int
 	DataFilePath  string
@@ -29,10 +26,10 @@ type Client struct {
 	config  ClientConfig
 	file    *os.File
 	scanner *bufio.Scanner
-	Conn    net.Conn
+	conn    net.Conn
+	reader  *bufio.Reader
 }
 
-// NewClient still prepares the client but doesn't connect yet.
 func NewClient(config ClientConfig) (*Client, error) {
 	file, err := os.Open(config.DataFilePath)
 	if err != nil {
@@ -50,7 +47,8 @@ func (c *Client) Connect() error {
 	if err != nil {
 		return fmt.Errorf("could not connect to server: %w", err)
 	}
-	c.Conn = conn
+	c.conn = conn
+	c.reader = bufio.NewReader(conn)
 	log.Infof("Client %s connected to %s", c.config.ID, c.config.ServerAddress)
 	return nil
 }
@@ -59,8 +57,8 @@ func (c *Client) Close() {
 	if c.file != nil {
 		c.file.Close()
 	}
-	if c.Conn != nil {
-		c.Conn.Close()
+	if c.conn != nil {
+		c.conn.Close()
 	}
 	log.Infof("Client %s connection closed.", c.config.ID)
 }
@@ -92,12 +90,12 @@ func (c *Client) StartClientLoop() {
 		overflowBet = batchResult.OverflowBet
 
 		if len(batchResult.Batch.bets) > 0 {
-			response, err := SendBatch(c.Conn, batchResult.Batch, c.config.ID)
+			response, err := SendBatch(c.conn, c.reader, batchResult.Batch, c.config.ID)
 			if err != nil {
 				log.Errorf("Failed to send batch: %v", err)
 				return
 			}
-			log.Infof("Client %s sent batch with %d bets. Server response: %s - %s", c.config.ID, len(batchResult.Batch.bets), response.Status, response.Message)
+			log.Infof("action: send_batch | result: success | client_id: %s | server_status: %s | bets_sent: %d", c.config.ID, response.Status, len(batchResult.Batch.bets))
 		}
 
 		if len(batchResult.Batch.bets) == 0 && overflowBet == nil {

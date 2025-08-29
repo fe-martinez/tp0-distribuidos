@@ -119,8 +119,6 @@ func main() {
 	clientConfig := common.ClientConfig{
 		ServerAddress: v.GetString("server.address"),
 		ID:            v.GetString("id"),
-		LoopAmount:    v.GetInt("loop.amount"),
-		LoopPeriod:    v.GetDuration("loop.period"),
 		MaxBatchSize:  8192, // 8kB limit
 		MaxBatchBets:  v.GetInt("batch.maxAmount"),
 		DataFilePath:  v.GetString("data.filePath"),
