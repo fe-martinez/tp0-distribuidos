@@ -99,7 +99,6 @@ func PrintConfig(v *viper.Viper) {
 		v.GetDuration("loop.period"),
 		v.GetString("log.level"),
 		v.GetInt("batch.maxAmount"),
-		v.GetString("data.filePath"),
 	)
 }
 
@@ -121,7 +120,7 @@ func main() {
 		ID:            v.GetString("id"),
 		MaxBatchSize:  8192, // 8kB limit
 		MaxBatchBets:  v.GetInt("batch.maxAmount"),
-		DataFilePath:  v.GetString("data.filePath"),
+		DataFilePath:  fmt.Sprintf("/.data/agency-%v.csv", v.GetString("id")),
 	}
 
 	client, err := common.NewClient(clientConfig)
