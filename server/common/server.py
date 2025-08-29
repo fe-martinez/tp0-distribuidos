@@ -4,7 +4,7 @@ import socket
 import logging
 import signal
 import sys
-from .protocol import Protocol
+from .protocol import Protocol, ProtocolError
 from .bet_handler import BetHandler
 
 class Server:
@@ -32,6 +32,8 @@ class Server:
 
             Protocol.send_response(client_sock, result)
             logging.info(f'action: send_response | result: success | ip: {addr[0]}')
+        except ProtocolError as e:
+            logging.error(f'action: client_handling | result: fail | ip: {addr[0]} | error: protocol_error | details: {e}')
         except (OSError, ValueError, ConnectionAbortedError) as e:
             logging.error(f'action: client_handling | result: fail | ip: {addr[0]} | error: {e}')
         finally:

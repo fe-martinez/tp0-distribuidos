@@ -1,6 +1,7 @@
 package common
 
 import (
+	"errors"
 	"os"
 	"os/signal"
 	"syscall"
@@ -49,7 +50,12 @@ func (c *Client) StartClientLoop() {
 
 		response, err := SendBet(c.config.ServerAddress, bet, c.config.ID)
 		if err != nil {
-			log.Errorf("action: send_bet | result: fail | client_id: %v | error: %v", c.config.ID, err)
+			var protocolErr ProtocolError
+			if errors.As(err, &protocolErr) {
+				log.Errorf("action: send_bet | result: fail | client_id: %v | error_type: protocol_error | details: %v", c.config.ID, protocolErr.Message)
+			} else {
+				log.Errorf("action: send_bet | result: fail | client_id: %v | error_type: general | error: %v", c.config.ID, err)
+			}
 			time.Sleep(c.config.LoopPeriod)
 			continue
 		}
