@@ -1,5 +1,3 @@
-# FILE: common/server.py
-
 import socket
 import logging
 import signal
@@ -22,19 +20,21 @@ class Server:
             self.__handle_client_connection(client_sock)
 
     def __handle_client_connection(self, client_sock):
+        """Handles a persistent client connection, processing multiple batches."""
         addr = client_sock.getpeername()
         logging.info(f'action: client_connection | result: success | ip: {addr[0]}')
+        
         try:
-            request_data = Protocol.receive_message(client_sock)
-            logging.info(f'action: receive_message | result: success | ip: {addr[0]}')
-
-            result = self._handler.process_bet(request_data)
-
-            Protocol.send_response(client_sock, result)
-            logging.info(f'action: send_response | result: success | ip: {addr[0]}')
+            while True:
+                batch_data = Protocol.receive_batch(client_sock)
+                result = self._handler.process_batch(batch_data)
+                Protocol.send_response(client_sock, result)
+        
+        except ConnectionAbortedError:
+            logging.info(f'action: client_connection | result: success | ip: {addr[0]} | status: client disconnected gracefully')
         except ProtocolError as e:
             logging.error(f'action: client_handling | result: fail | ip: {addr[0]} | error: protocol_error | details: {e}')
-        except (OSError, ValueError, ConnectionAbortedError) as e:
+        except (OSError, ValueError) as e:
             logging.error(f'action: client_handling | result: fail | ip: {addr[0]} | error: {e}')
         finally:
             logging.info(f'action: client_disconnect | result: success | ip: {addr[0]}')

@@ -1,20 +1,16 @@
 import logging
 import socket
 
-
 class ProtocolError(Exception):
     pass
 
-
 class Protocol:
-    expectedFields = 6
     encoding = 'utf-8'
     bufferSize = 1024
     messageDelimiter = '\n'
     fieldSeparator = ';'
 
-    def receive_message(client_sock: socket.socket) -> dict[str, str]:
-        """Receive and parse a bet message from the client socket"""
+    def _read_line(client_sock: socket.socket) -> str:
         chunks = []
         while True:
             try:
@@ -29,30 +25,43 @@ class Protocol:
             if Protocol.messageDelimiter in chunk:
                 break
         
-        full_message = ''.join(chunks).strip()
-        if not full_message:
-            raise ProtocolError("Empty message received")
+        return ''.join(chunks).strip()
 
-        fields = full_message.split(Protocol.fieldSeparator)
-        if len(fields) != Protocol.expectedFields:
-            raise ProtocolError(f"Invalid message format: expected {Protocol.expectedFields} fields, got {len(fields)}")
+    def receive_batch(client_sock: socket.socket) -> list[dict[str, str]]:
+        """Receive and parse a complete batch of bets from the client socket."""
+        header = Protocol._read_line(client_sock)
+        header_parts = header.split(Protocol.fieldSeparator)
+        if len(header_parts) != 2:
+            raise ProtocolError(f"Invalid batch header format: got {header}")
 
+        agency_id, num_bets_str = header_parts
         try:
-            int(fields[5])
+            num_bets = int(num_bets_str)
         except ValueError:
-            raise ProtocolError(f"Invalid number field: '{fields[5]}' is not a valid integer")
+            raise ProtocolError(f"Invalid number of bets in header: '{num_bets_str}'")
 
-        return {
-            "agency": fields[0].strip(),
-            "firstName": fields[1].strip(),
-            "lastName": fields[2].strip(),
-            "document": fields[3].strip(),
-            "birthdate": fields[4].strip(),
-            "number": fields[5].strip()
-        }
+        bets = []
+        for _ in range(num_bets):
+            bet_line = Protocol._read_line(client_sock)
+            fields = bet_line.split(Protocol.fieldSeparator)
+            if len(fields) != 5:
+                raise ProtocolError(f"Invalid bet format: expected 5 fields, got {len(fields)}")
+            
+            bet_data = {
+                "agency": agency_id.strip(),
+                "firstName": fields[0].strip(),
+                "lastName": fields[1].strip(),
+                "document": fields[2].strip(),
+                "birthdate": fields[3].strip(),
+                "number": fields[4].strip()
+            }
+            bets.append(bet_data)
+        
+        logging.info(f'action: receive_batch | result: success | ip: {client_sock.getpeername()[0]} | batch_size: {len(bets)}')
+        return bets
 
     def send_response(client_sock: socket.socket, response: dict[str, str]) -> None:
-        """Send a response message to the client socket"""
+        """Send a response message to the client socket (this function remains the same)."""
         if 'status' not in response or 'message' not in response:
             raise ValueError("Response must contain 'status' and 'message' fields")
 
