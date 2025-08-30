@@ -39,7 +39,7 @@ class Server:
                 Protocol.send_response(client_sock, result)
         
         except ConnectionAbortedError:
-            logging.info(f'action: client_connection | result: success | ip: {addr[0]} | status: client disconnected gracefully')
+            logging.info(f'action: client_connection | result: success | ip: {addr[0]} | status: client disconnected')
         except ProtocolError as e:
             logging.error(f'action: client_handling | result: fail | ip: {addr[0]} | error: protocol_error | details: {e}')
         except (OSError, ValueError) as e:

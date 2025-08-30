@@ -34,7 +34,7 @@ class Protocol:
         except (UnicodeDecodeError, ValueError):
             raise ProtocolError("Invalid message encoding or content-length header.")
         except ConnectionAbortedError as e:
-            logging.error(f"Connection lost while receiving batch: {e}")
+            logging.debug(f"Client closed the connection: {e}")
             raise
 
         lines = payload_str.strip().split(Protocol.messageDelimiter)
@@ -63,6 +63,9 @@ class Protocol:
                 "number": fields[4].strip()
             }
             bets.append(bet_data)
+
+        if len(bets) != int(num_bets_str):
+            raise ProtocolError(f"Batch size mismatch: header indicates {num_bets_str} bets, but received {len(bets)} bets.")
         
         logging.debug(f'action: receive_batch | result: success | ip: {client_sock.getpeername()[0]} | batch_size: {len(bets)}')
         return bets
