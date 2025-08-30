@@ -45,7 +45,7 @@ for i in $(seq 1 "$CLIENT_COUNT"); do
       - CLI_ID=${i}
     volumes:
       - ./client/config.yaml:/config.yaml:ro
-      - ./.data/dataset:/.data:ro
+      - ./.data/dataset:/.data
     networks:
       - testing_net
     depends_on:
