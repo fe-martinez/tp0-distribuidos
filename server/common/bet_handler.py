@@ -26,7 +26,7 @@ class BetHandler:
 
             store_bets(bets_to_store)
 
-            logging.info(f'action: apuestas_almacenadas | result: success | stored_count: {len(bets_to_store)}')
+            logging.debug(f'action: apuestas_almacenadas | result: success | stored_count: {len(bets_to_store)}')
             return {"status": "success", "message": "Batch stored successfully."}
         except Exception as e:
             logging.error(f"action: process_batch | result: fail | error: {e}")
