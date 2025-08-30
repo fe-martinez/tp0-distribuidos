@@ -52,8 +52,7 @@ class Protocol:
             
             fields = bet_line.split(Protocol.fieldSeparator)
             if len(fields) != 5:
-                logging.warning(f"Skipping malformed bet line: expected 5 fields, got {len(fields)} in '{bet_line}'")
-                continue
+                raise ProtocolError(f"Invalid bet format: expected 5 fields, got {len(fields)} in '{bet_line}'")
             
             bet_data = {
                 "agency": agency_id.strip(),
