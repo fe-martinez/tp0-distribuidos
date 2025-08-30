@@ -27,6 +27,10 @@ class Server:
         try:
             while True:
                 batch_data = Protocol.receive_batch(client_sock)
+                if not batch_data:
+                    logging.info(f'action: client_connection | result: success | ip: {addr[0]} | status: client finished sending')
+                    break
+                
                 result = self._handler.process_batch(batch_data)
                 if result["status"] == "success":
                     logging.info(f'action: apuesta_recibida | result: success | cantidad: {len(batch_data)}')
