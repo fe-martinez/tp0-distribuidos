@@ -28,6 +28,10 @@ class Server:
             while True:
                 batch_data = Protocol.receive_batch(client_sock)
                 result = self._handler.process_batch(batch_data)
+                if result["status"] == "success":
+                    logging.info(f'action: apuesta_recibida | result: success | cantidad: ${len(batch_data)}')
+                else:
+                    logging.error(f'action: apuesta_recibida | result: fail | cantidad: ${len(batch_data)}')
                 Protocol.send_response(client_sock, result)
         
         except ConnectionAbortedError:

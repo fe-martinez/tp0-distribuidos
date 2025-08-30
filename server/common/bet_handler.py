@@ -5,7 +5,7 @@ class BetHandler:
     def process_batch(self, batch_data: list[dict]):
         """Processes a list of bets, stores them, and returns a single response."""
         try:
-            logging.info(f"action: process_batch | result: in_progress | batch_size: {len(batch_data)}")
+            logging.debug(f"action: process_batch | result: in_progress | batch_size: {len(batch_data)}")
             
             bets_to_store = []
             for bet_data in batch_data:
@@ -23,7 +23,7 @@ class BetHandler:
 
             if bets_to_store:
                 last_bet = bets_to_store[-1]
-                logging.info(f'action: apuestas_almacenadas | result: success | dni: {last_bet.document} | numero: {last_bet.number}')
+                logging.debug(f'action: apuestas_almacenadas | result: success | dni: {last_bet.document} | numero: {last_bet.number}')
 
             return {"status": "success", "message": "Batch stored successfully."}
 

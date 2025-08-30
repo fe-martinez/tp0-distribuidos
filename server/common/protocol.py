@@ -26,23 +26,39 @@ class Protocol:
                 break
         
         return ''.join(chunks).strip()
+    
+    # Header format: AGENCY_ID;NUM_BETS
+    # Bet format: FIRST_NAME;LAST_NAME;DOCUMENT;BIRTHDATE;NUMBER
+    # Example batch:
+    # AGENCY1;3\n
+    # John;Doe;123456;1990-01-01;42\n
+    # Jane;Smith;654321;1985-05-15;7\n
+    # Alice;Johnson;111222;1978-12-30;19\n
+    def __isHeader(parts: list[str]) -> bool:
+        if len(parts) != 2:
+            return False
+        agency_id, num_bets_str = parts
+        if not agency_id or not num_bets_str.isdigit():
+            return False
+        return True
 
     def receive_batch(client_sock: socket.socket) -> list[dict[str, str]]:
         """Receive and parse a complete batch of bets from the client socket."""
-        header = Protocol._read_line(client_sock)
-        header_parts = header.split(Protocol.fieldSeparator)
-        if len(header_parts) != 2:
-            raise ProtocolError(f"Invalid batch header format: got {header}")
+        line = Protocol._read_line(client_sock)
+        objects = line.split(Protocol.messageDelimiter)
+        header = objects[0].split(Protocol.fieldSeparator)
 
-        agency_id, num_bets_str = header_parts
+        if not Protocol.__isHeader(header):
+            raise ProtocolError(f"Invalid batch header format: got {line}")
+
+        agency_id, num_bets_str = header
         try:
             num_bets = int(num_bets_str)
         except ValueError:
             raise ProtocolError(f"Invalid number of bets in header: '{num_bets_str}'")
 
         bets = []
-        for _ in range(num_bets):
-            bet_line = Protocol._read_line(client_sock)
+        for bet_line in objects[1:]:
             fields = bet_line.split(Protocol.fieldSeparator)
             if len(fields) != 5:
                 raise ProtocolError(f"Invalid bet format: expected 5 fields, got {len(fields)}")

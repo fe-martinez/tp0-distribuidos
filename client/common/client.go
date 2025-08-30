@@ -95,7 +95,7 @@ func (c *Client) StartClientLoop() {
 				log.Errorf("Failed to send batch: %v", err)
 				return
 			}
-			log.Infof("action: send_batch | result: success | client_id: %s | server_status: %s | bets_sent: %d", c.config.ID, response.Status, len(batchResult.Batch.bets))
+			log.Debugf("action: send_batch | result: success | client_id: %s | server_status: %s | bets_sent: %d", c.config.ID, response.Status, len(batchResult.Batch.bets))
 		}
 
 		if len(batchResult.Batch.bets) == 0 && overflowBet == nil {
