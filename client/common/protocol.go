@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -36,7 +37,9 @@ func (e ProtocolError) Unwrap() error {
 	return e.Err
 }
 
+// MODIFIED VERSION
 func SendBatch(conn net.Conn, batch Batch, agencyID string) (Response, error) {
+	// ... (The sending part is correct and remains the same)
 	var builder strings.Builder
 	builder.WriteString(fmt.Sprintf("%s;%d\n", agencyID, len(batch.bets)))
 
@@ -61,12 +64,22 @@ func SendBatch(conn net.Conn, batch Batch, agencyID string) (Response, error) {
 		return Response{}, fmt.Errorf("failed to set read timeout: %w", err)
 	}
 
-	responseBytes, err := io.ReadAll(conn)
-	if err != nil {
-		return Response{}, ProtocolError{Message: "failed to receive response for batch", Err: err}
+	respHeaderBuf := make([]byte, HeaderSize)
+	if _, err := io.ReadFull(conn, respHeaderBuf); err != nil {
+		return Response{}, ProtocolError{Message: "failed to read response header", Err: err}
 	}
 
-	parts := strings.Split(strings.TrimSpace(string(responseBytes)), ";")
+	respLen, err := strconv.Atoi(string(respHeaderBuf))
+	if err != nil {
+		return Response{}, ProtocolError{Message: "invalid response length in header", Err: err}
+	}
+
+	respPayloadBuf := make([]byte, respLen)
+	if _, err := io.ReadFull(conn, respPayloadBuf); err != nil {
+		return Response{}, ProtocolError{Message: "failed to read response payload", Err: err}
+	}
+
+	parts := strings.Split(strings.TrimSpace(string(respPayloadBuf)), ";")
 	if len(parts) != 2 {
 		return Response{}, ProtocolError{
 			Message: fmt.Sprintf("invalid server response format: expected 2 fields, got %d", len(parts)),

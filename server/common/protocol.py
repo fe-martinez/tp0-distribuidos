@@ -68,14 +68,18 @@ class Protocol:
         logging.info(f'action: receive_batch | result: success | ip: {client_sock.getpeername()[0]} | batch_size: {len(bets)}')
         return bets
 
-    def send_response(client_sock: socket.socket, response: dict[str, str]) -> None:
-        """Send a response message to the client socket, framed with a content-length header."""
-        if 'status' not in response or 'message' not in response:
-            raise ValueError("Response must contain 'status' and 'message' fields")
+def send_response(client_sock: socket.socket, response: dict[str, str]) -> None:
+    """Send a response message to the client socket, framed with a content-length header."""
+    if 'status' not in response or 'message' not in response:
+        raise ValueError("Response must contain 'status' and 'message' fields")
 
-        response_str = f"{response['status']}{Protocol.fieldSeparator}{response['message']}{Protocol.messageDelimiter}"
-        logging.debug(f"Sending response: {response_str.strip()}")
-        try:
-            client_sock.sendall(response_str.encode(Protocol.encoding))
-        except socket.error as e:
-            raise ProtocolError(f"Failed to send response: {e}")
+    response_str = f"{response['status']}{Protocol.fieldSeparator}{response['message']}{Protocol.messageDelimiter}"
+    payload_bytes = response_str.encode(Protocol.encoding)
+    header_bytes = f"{len(payload_bytes):0{Protocol.header_size}d}".encode(Protocol.encoding)
+    
+    full_message = header_bytes + payload_bytes
+    logging.debug(f"Sending response: {response_str.strip()}")
+    try:
+        client_sock.sendall(full_message)
+    except socket.error as e:
+        raise ProtocolError(f"Failed to send response: {e}")
