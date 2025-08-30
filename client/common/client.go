@@ -90,7 +90,7 @@ func (c *Client) StartClientLoop() {
 		overflowBet = batchResult.OverflowBet
 
 		if len(batchResult.Batch.bets) > 0 {
-			response, err := SendBatch(c.conn, c.reader, batchResult.Batch, c.config.ID)
+			response, err := SendBatch(c.conn, batchResult.Batch, c.config.ID)
 			if err != nil {
 				log.Errorf("Failed to send batch: %v", err)
 				return

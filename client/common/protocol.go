@@ -1,8 +1,8 @@
 package common
 
 import (
-	"bufio"
 	"fmt"
+	"io"
 	"net"
 	"strings"
 	"time"
@@ -12,6 +12,7 @@ const (
 	ConnectionTimeout = 10 * time.Second
 	ReadTimeout       = 5 * time.Second
 	WriteTimeout      = 5 * time.Second
+	HeaderSize        = 8
 )
 
 type Response struct {
@@ -35,19 +36,7 @@ func (e ProtocolError) Unwrap() error {
 	return e.Err
 }
 
-func writeAll(conn net.Conn, msg []byte) error {
-	totalSent := 0
-	for totalSent < len(msg) {
-		sent, err := conn.Write(msg[totalSent:])
-		if err != nil {
-			return fmt.Errorf("failed to write data: %w", err)
-		}
-		totalSent += sent
-	}
-	return nil
-}
-
-func SendBatch(conn net.Conn, reader *bufio.Reader, batch Batch, agencyID string) (Response, error) {
+func SendBatch(conn net.Conn, batch Batch, agencyID string) (Response, error) {
 	var builder strings.Builder
 	builder.WriteString(fmt.Sprintf("%s;%d\n", agencyID, len(batch.bets)))
 
@@ -55,11 +44,16 @@ func SendBatch(conn net.Conn, reader *bufio.Reader, batch Batch, agencyID string
 		builder.WriteString(bet.SerializeBet())
 	}
 
+	payloadBytes := []byte(builder.String())
+	headerBytes := []byte(fmt.Sprintf("%0*d", HeaderSize, len(payloadBytes)))
+
 	if err := conn.SetWriteDeadline(time.Now().Add(WriteTimeout)); err != nil {
 		return Response{}, fmt.Errorf("failed to set write timeout: %w", err)
 	}
 
-	if err := writeAll(conn, []byte(builder.String())); err != nil {
+	fullMessage := append(headerBytes, payloadBytes...)
+	_, err := conn.Write(fullMessage)
+	if err != nil {
 		return Response{}, ProtocolError{Message: "failed to send batch message", Err: err}
 	}
 
@@ -67,12 +61,12 @@ func SendBatch(conn net.Conn, reader *bufio.Reader, batch Batch, agencyID string
 		return Response{}, fmt.Errorf("failed to set read timeout: %w", err)
 	}
 
-	responseStr, err := reader.ReadString('\n')
+	responseBytes, err := io.ReadAll(conn)
 	if err != nil {
 		return Response{}, ProtocolError{Message: "failed to receive response for batch", Err: err}
 	}
 
-	parts := strings.Split(strings.TrimSpace(responseStr), ";")
+	parts := strings.Split(strings.TrimSpace(string(responseBytes)), ";")
 	if len(parts) != 2 {
 		return Response{}, ProtocolError{
 			Message: fmt.Sprintf("invalid server response format: expected 2 fields, got %d", len(parts)),
