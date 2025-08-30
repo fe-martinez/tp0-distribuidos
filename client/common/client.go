@@ -19,7 +19,6 @@ type ClientConfig struct {
 	ServerAddress string
 	MaxBatchSize  int
 	MaxBatchBets  int
-	DataFilePath  string
 }
 
 type Client struct {
@@ -31,7 +30,9 @@ type Client struct {
 }
 
 func NewClient(config ClientConfig) (*Client, error) {
-	file, err := os.Open(config.DataFilePath)
+	filepath := fmt.Sprintf("/.data/agency-%v.csv", config.ID)
+	file, err := os.Open(filepath)
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to open data file: %w", err)
 	}
