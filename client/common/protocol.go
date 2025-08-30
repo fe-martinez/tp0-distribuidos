@@ -37,9 +37,7 @@ func (e ProtocolError) Unwrap() error {
 	return e.Err
 }
 
-// MODIFIED VERSION
 func SendBatch(conn net.Conn, batch Batch, agencyID string) (Response, error) {
-	// ... (The sending part is correct and remains the same)
 	var builder strings.Builder
 	builder.WriteString(fmt.Sprintf("%s;%d\n", agencyID, len(batch.bets)))
 

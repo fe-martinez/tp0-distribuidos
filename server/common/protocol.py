@@ -12,7 +12,6 @@ class Protocol:
     fieldSeparator = ';'
 
     def _receive_all(client_sock: socket.socket, length: int) -> bytes:
-        """Helper function to reliably receive an exact number of bytes."""
         chunks = []
         bytes_received = 0
         while bytes_received < length:
@@ -71,7 +70,6 @@ class Protocol:
         return bets
 
     def send_response(client_sock: socket.socket, response: dict[str, str]) -> None:
-        """Send a response message to the client socket, framed with a content-length header."""
         if 'status' not in response or 'message' not in response:
             raise ValueError("Response must contain 'status' and 'message' fields")
 

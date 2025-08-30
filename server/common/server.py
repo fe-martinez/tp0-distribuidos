@@ -20,7 +20,6 @@ class Server:
             self.__handle_client_connection(client_sock)
 
     def __handle_client_connection(self, client_sock):
-        """Handles a persistent client connection, processing multiple batches."""
         addr = client_sock.getpeername()
         logging.info(f'action: client_connection | result: success | ip: {addr[0]}')
         
