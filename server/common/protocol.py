@@ -64,7 +64,7 @@ class Protocol:
             }
             bets.append(bet_data)
         
-        logging.info(f'action: receive_batch | result: success | ip: {client_sock.getpeername()[0]} | batch_size: {len(bets)}')
+        logging.debug(f'action: receive_batch | result: success | ip: {client_sock.getpeername()[0]} | batch_size: {len(bets)}')
         return bets
 
     def send_response(client_sock: socket.socket, response: dict[str, str]) -> None:
