@@ -29,6 +29,9 @@ class Server:
                 if not batch_data:
                     logging.info(f'action: client_connection | result: success | ip: {addr[0]} | status: client finished sending')
                     break
+                if len(batch_data) == 1 and batch_data[0].get("status") == "end":
+                    logging.info(f'action: client_connection | result: success | ip: {addr[0]} | status: received END message')
+                    break
                 
                 result = self._handler.process_batch(batch_data)
                 if result["status"] == "success":
@@ -48,6 +51,11 @@ class Server:
             if client_sock in self._active_connections:
                 self._active_connections.remove(client_sock)
             client_sock.close()
+
+    def __announce_winners(self):
+        winners = self._handler.get_winners()
+        for winner in winners:
+            logging.info(f'action: announce_winner | result: success | winner: {winner}')
 
     def __accept_new_connection(self):
         logging.info('action: accept_connections | result: in_progress')

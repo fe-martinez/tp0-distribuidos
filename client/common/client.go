@@ -103,6 +103,42 @@ func (c *Client) StartClientLoop() {
 			log.Infof("End of file reached. Client finished processing.")
 			break
 		}
+
+		// Send end of batch sending message to server
+		if _, err := c.conn.Write([]byte("END\n")); err != nil {
+			log.Errorf("Failed to send end of batch message: %v", err)
+			return
+		}
+
+		// Wait for server to send the results of the batch processing back.
+		// Will be a list of winners
+		respHeaderBuf := make([]byte, HeaderSize)
+		if _, err := c.reader.Read(respHeaderBuf); err != nil {
+			log.Errorf("Failed to read response header: %v", err)
+			return
+		}
+
+		var contentLength int
+		if _, err := fmt.Sscanf(string(respHeaderBuf), "%d", &contentLength); err != nil {
+			log.Errorf("Failed to parse response header: %v", err)
+			return
+		}
+
+		respPayloadBuf := make([]byte, contentLength)
+		if _, err := c.reader.Read(respPayloadBuf); err != nil {
+			log.Errorf("Failed to read response payload: %v", err)
+			return
+		}
+
+		responseStr := string(respPayloadBuf)
+		var response Response
+		if _, err := fmt.Sscanf(responseStr, "%s;%s", &response.Status, &response.Message); err != nil {
+			log.Errorf("Failed to parse response payload: %v", err)
+			return
+		}
+
+		log.Infof("Batch processed. Server response - Status: %s, Message: %s", response.Status, response.Message)
+
 	}
 
 	log.Infof("Client %s finished sending all bets.", c.config.ID)

@@ -25,6 +25,10 @@ class Protocol:
     def receive_batch(client_sock: socket.socket) -> list[dict[str, str]]:
         try:
             header_bytes = Protocol._receive_all(client_sock, Protocol.header_size)
+            if Protocol.__is_end_message(header_bytes.decode(Protocol.encoding)):
+                logging.debug(f"Received END message from {client_sock.getpeername()[0]}")
+                return [{"status": "end"}]
+
             msg_len = int(header_bytes.decode(Protocol.encoding))
 
             payload_bytes = Protocol._receive_all(client_sock, msg_len)
@@ -83,3 +87,6 @@ class Protocol:
             client_sock.sendall(full_message)
         except socket.error as e:
             raise ProtocolError(f"Failed to send response: {e}")
+        
+    def __is_end_message(line: str) -> bool:
+        return line.strip() == "END"
