@@ -47,7 +47,7 @@ func (c *Client) Connect() error {
 		return fmt.Errorf("could not connect to server: %w", err)
 	}
 	c.conn = conn
-	log.Infof("Client %s connected to %s", c.config.ID, c.config.ServerAddress)
+	log.Infof("action: connect | result: success | client_id: %s | server_address: %s", c.config.ID, c.config.ServerAddress)
 	return nil
 }
 
@@ -72,17 +72,17 @@ func (c *Client) StartClientLoop() {
 
 	defer c.Close()
 
-	log.Infof("Client %s starting to send bets.", c.config.ID)
+	log.Infof("action: start_sending | result: success | client_id: %s", c.config.ID)
 	var overflowBet *Bet = nil
 	for {
 		if ctx.Err() != nil {
-			log.Infof("Client %s stopped due to shutdown signal.", c.config.ID)
+			log.Infof("action: stop_sending | result: success | client_id: %s", c.config.ID)
 			return
 		}
 
 		batchResult, err := CreateBatch(c.scanner, c.config.MaxBatchSize, c.config.MaxBatchBets, overflowBet)
 		if err != nil {
-			log.Errorf("Failed to create batch: %v", err)
+			log.Errorf("action: create_batch | result: fail | client_id: %s | error: %v", c.config.ID, err)
 			return
 		}
 
@@ -91,28 +91,27 @@ func (c *Client) StartClientLoop() {
 		if len(batchResult.Batch.bets) > 0 {
 			response, err := SendBatch(c.conn, batchResult.Batch, c.config.ID)
 			if err != nil {
-				log.Errorf("Failed to send batch: %v", err)
+				log.Errorf("action: send_batch | result: fail | client_id: %s | error: %v", c.config.ID, err)
 				return
 			}
 			log.Debugf("action: send_batch | result: success | server_status: %s", response.Status)
 		}
 
 		if len(batchResult.Batch.bets) == 0 && overflowBet == nil {
-			log.Infof("End of file reached. All bets sent.")
+			log.Infof("action: end_of_file | result: success | client_id: %s", c.config.ID)
 			break
 		}
 	}
 
-	log.Infof("Finished sending all bets. Sending END signal.")
 	if err := SendEndSignal(c.conn); err != nil {
-		log.Errorf("Failed to send END signal: %v", err)
+		log.Errorf("action: send_end_signal | result: fail | client_id: %s | error: %v", c.config.ID, err)
 		return
 	}
+	log.Infof("action: send_end_signal | result: success | client_id: %s", c.config.ID)
 
-	log.Infof("Waiting for lottery results for agency %s...", c.config.ID)
 	winners, err := ReceiveWinners(c.conn)
 	if err != nil {
-		log.Errorf("Failed to receive lottery results: %v", err)
+		log.Errorf("action: consulta_ganadores | result: fail | client_id: %s | error: %v", c.config.ID, err)
 		return
 	}
 

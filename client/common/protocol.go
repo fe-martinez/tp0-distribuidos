@@ -82,7 +82,7 @@ func ReceiveWinners(conn net.Conn) ([]string, error) {
 	}
 
 	if response == "" {
-		return []string{}, nil // No winners
+		return []string{}, nil
 	}
 
 	winners := strings.Split(response, ";")
