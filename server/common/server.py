@@ -9,7 +9,7 @@ from .bet_handler import BetHandler
 class Server:
     """A concurrent TCP server using a Listener/Worker threading model."""
 
-    def __init__(self, port, listen_backlog):
+    def __init__(self, port, listen_backlog, client_count):
         self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_socket.bind(('', port))
         self._server_socket.listen(listen_backlog)
@@ -18,6 +18,7 @@ class Server:
         self._active_threads = []
 
         self._clients_finished_count = 0
+        self._client_count = client_count
         self._state_lock = threading.Lock()
         self._draw_event = threading.Event()
 
@@ -84,11 +85,14 @@ class Server:
 
     def _handle_client_finished(self):
         with self._state_lock:
+            if self._draw_event.is_set():
+                return
+
             self._clients_finished_count += 1
-            logging.info(f"Client finished. Total finished: {self._clients_finished_count}/{len(self._active_threads)}")
-            if self._clients_finished_count >= len(self._active_threads):
-                if not self._draw_event.is_set():
-                    self._perform_draw()
+            logging.info(f"Client finished. Total finished: {self._clients_finished_count}/{self._client_count}")
+
+            if self._clients_finished_count >= self._client_count:
+                self._perform_draw()
 
     def _perform_draw(self):
         logging.info("All clients have finished. Performing lottery draw...")
