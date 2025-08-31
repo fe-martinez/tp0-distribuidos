@@ -57,7 +57,6 @@ class Server:
                     batch_data = Protocol.receive_batch(client_sock)
                     if not batch_data:
                         logging.info(f'action: client_connection | result: success | ip: {addr[0]} | status: client finished sending bets')
-                        self._handle_client_finished()
                         break
                     
                     if batch_data and not client_agency:
@@ -69,6 +68,7 @@ class Server:
                     Protocol.send_response(client_sock, result)
 
                 logging.info(f"Client {addr[0]} ({client_agency}) is waiting for the lottery draw.")
+                self._handle_client_finished()
                 self._draw_event.wait()
 
                 winners = self._handler.get_winners_by_agency(int(client_agency))
