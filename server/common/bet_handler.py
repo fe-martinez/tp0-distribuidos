@@ -47,7 +47,5 @@ class BetHandler:
         logging.info(f"Winner calculation complete. Found {len(self._winners)} total winners from {len(all_bets)} bets.")
 
     def get_winners_by_agency(self, agency_id: int) -> list[str]:
-        logging.info(f"Retrieving winners for agency {agency_id}.")
-        print([bet.agency for bet in self._winners])
         agency_winners = [bet.document for bet in self._winners if bet.agency == agency_id]
         return agency_winners
