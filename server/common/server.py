@@ -72,13 +72,16 @@ class Server:
                 self._draw_event.wait()
 
                 winners = self._handler.get_winners_by_agency(int(client_agency))
-                if winners:
-                    Protocol.send_winners(client_sock, winners)
-                    logging.info(f'action: consulta_ganadores | result: success | ip: {addr[0]} | agency: {client_agency}')
-                else:
-                    logging.warning(f"No clients from agency {client_agency} won.")
 
-            except (ConnectionAbortedError, ProtocolError, OSError) as e:
+                Protocol.send_winners(client_sock, winners or []) 
+                logging.info(f'action: sent_winners | result: success | ip: {addr[0]} | agency: {client_agency}')
+
+                logging.debug(f"Waiting for client {addr[0]} to close connection.")
+                client_sock.recv(1024)
+
+            except (ConnectionAbortedError) as e:
+                logging.error(f'action: client_close | result: success | ip: {addr[0]} | error: {e}')
+            except (ProtocolError, OSError) as e:
                 logging.error(f'action: client_handling | result: fail | ip: {addr[0]} | error: {e}')
         
         logging.info(f'action: client_disconnect | result: success | ip: {addr[0]}')
