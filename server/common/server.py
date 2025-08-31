@@ -1,115 +1,80 @@
 import socket
 import logging
 import signal
-import threading
 
 from .protocol import Protocol, ProtocolError
 from .bet_handler import BetHandler
 
 class Server:
-    """A concurrent TCP server using a Listener/Worker threading model."""
-
     def __init__(self, port, listen_backlog, client_count):
         self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_socket.bind(('', port))
         self._server_socket.listen(listen_backlog)
-        self._running = False
         self._handler = BetHandler()
-        self._active_threads = []
-
-        self._clients_finished_count = 0
         self._client_count = client_count
-        self._state_lock = threading.Lock()
-        self._draw_event = threading.Event()
-
+        self._client_connections = []
         self.__setup_signal_handlers()
 
     def run(self):
-        self._running = True
-        logging.info(f"Server starting.")
-
-        while self._running:
+        logging.info(f"Connection phase: Waiting for {self._client_count} clients to connect.")
+        for i in range(self._client_count):
             try:
                 client_sock, addr = self._server_socket.accept()
-                
-                worker_thread = threading.Thread(
-                    target=self._handle_client_connection,
-                    args=(client_sock, addr)
-                )
-                self._active_threads.append(worker_thread)
-                worker_thread.start()
-
-                self._active_threads = [t for t in self._active_threads if t.is_alive()]
-
+                logging.info(f"Accepted connection from {addr[0]} ({i+1}/{self._client_count})")
+                self._client_connections.append({"socket": client_sock, "address": addr, "agency": ""})
             except OSError:
-                if self._running:
-                    logging.error("Error accepting connection.")
-                else:
-                    logging.info("Server socket closed, listener thread shutting down.")
-                break
-
-    def _handle_client_connection(self, client_sock, addr):
-        client_agency = ""
-        logging.info(f'action: client_connection | result: success | ip: {addr[0]}')
-        with client_sock:
-            try:
-                while self._running:
-                    batch_data = Protocol.receive_batch(client_sock)
-                    if not batch_data:
-                        logging.info(f'action: client_connection | result: success | ip: {addr[0]} | status: client finished sending bets')
-                        break
-                    
-                    if batch_data and not client_agency:
-                        client_agency = batch_data[0]['agency']
-
-                    result = self._handler.process_batch(batch_data)
-                    log_level = logging.INFO if result["status"] == "success" else logging.ERROR
-                    logging.log(log_level, f'action: apuesta_recibida | result: {result["status"]} | cantidad: {len(batch_data)}')
-                    Protocol.send_response(client_sock, result)
-
-                logging.info(f"Client {addr[0]} ({client_agency}) is waiting for the lottery draw.")
-                self._handle_client_finished()
-                self._draw_event.wait()
-
-                winners = self._handler.get_winners_by_agency(int(client_agency))
-
-                Protocol.send_winners(client_sock, winners or []) 
-                logging.info(f'action: sent_winners | result: success | ip: {addr[0]} | agency: {client_agency}')
-
-                logging.debug(f"Waiting for client {addr[0]} to close connection.")
-                client_sock.recv(1024)
-
-            except (ConnectionAbortedError) as e:
-                logging.error(f'action: client_close | result: success | ip: {addr[0]} | error: {e}')
-            except (ProtocolError, OSError) as e:
-                logging.error(f'action: client_handling | result: fail | ip: {addr[0]} | error: {e}')
-        
-        logging.info(f'action: client_disconnect | result: success | ip: {addr[0]}')
-
-    def _handle_client_finished(self):
-        with self._state_lock:
-            if self._draw_event.is_set():
+                logging.error("Server socket closed during connection phase.")
                 return
 
-            self._clients_finished_count += 1
-            logging.info(f"Client finished. Total finished: {self._clients_finished_count}/{self._client_count}")
+        logging.info("Processing phase: Handling clients one by one.")
+        for conn_info in self._client_connections:
+            self._handle_client_bets(conn_info)
 
-            if self._clients_finished_count >= self._client_count:
-                self._perform_draw()
-
-    def _perform_draw(self):
-        logging.info("All clients have finished. Performing lottery draw...")
+        logging.info("All clients have finished sending bets. Performing draw...")
         self._handler.calculate_winners()
         logging.info('action: sorteo | result: success')
-        self._draw_event.set()
-    
-    def __setup_signal_handlers(self):
-        signal.signal(signal.SIGINT, self._signal_handler)
-        signal.signal(signal.SIGTERM, self._signal_handler)
 
-    def _signal_handler(self, sig, frame):
-        logging.info(f'action: shutdown | result: in_progress | signal: {sig}')
-        self._running = False
+        logging.info("Sending results back to all clients.")
+        for conn_info in self._client_connections:
+            self._send_client_results(conn_info)
+
+        logging.info("All results sent. Shutting down.")
         self._server_socket.close()
-        for thread in self._active_threads:
-            thread.join()
+
+    def _handle_client_bets(self, conn_info):
+        client_sock = conn_info["socket"]
+        addr = conn_info["address"]
+        logging.info(f'Processing bets for client {addr[0]}')
+        
+        try:
+            while True:
+                batch_data = Protocol.receive_batch(client_sock)
+                if not batch_data:
+                    logging.info(f'Client {addr[0]} finished sending bets.')
+                    break
+                
+                if not conn_info["agency"]:
+                    conn_info["agency"] = batch_data[0]['agency']
+
+                result = self._handler.process_batch(batch_data)
+                Protocol.send_response(client_sock, result)
+        except (ProtocolError, OSError, ConnectionAbortedError) as e:
+            logging.error(f'action: receive_bets | result: fail | ip: {addr[0]} | error: {e}')
+
+    def _send_client_results(self, conn_info):
+        client_sock = conn_info["socket"]
+        addr = conn_info["address"]
+        agency = conn_info["agency"]
+
+        with client_sock:
+            try:
+                winners = self._handler.get_winners_by_agency(int(agency))
+                Protocol.send_winners(client_sock, winners or [])
+                logging.info(f'action: sent_winners | result: success | ip: {addr[0]} | agency: {agency}')
+                client_sock.recv(1024) # Wait for client to close
+            except (OSError, ProtocolError) as e:
+                logging.error(f'action: send_results | result: fail | ip: {addr[0]} | error: {e}')
+
+    def __setup_signal_handlers(self):
+        signal.signal(signal.SIGINT, lambda s, f: self._server_socket.close())
+        signal.signal(signal.SIGTERM, lambda s, f: self._server_socket.close())
