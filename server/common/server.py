@@ -1,79 +1,108 @@
 import socket
 import logging
 import signal
-import sys
+import threading
+
 from .protocol import Protocol, ProtocolError
 from .bet_handler import BetHandler
 
 class Server:
+    """A concurrent TCP server using a Listener/Worker threading model."""
+
     def __init__(self, port, listen_backlog):
         self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_socket.bind(('', port))
         self._server_socket.listen(listen_backlog)
-        self._active_connections = []
+        self._running = False
         self._handler = BetHandler()
+        self._active_threads = []
+
+        self._clients_finished_count = 0
+        self._state_lock = threading.Lock()
+        self._draw_event = threading.Event()
+
         self.__setup_signal_handlers()
 
     def run(self):
-        while True:
-            client_sock = self.__accept_new_connection()
-            self.__handle_client_connection(client_sock)
+        self._running = True
+        logging.info(f"Server starting.")
 
-    def __handle_client_connection(self, client_sock):
-        addr = client_sock.getpeername()
-        logging.info(f'action: client_connection | result: success | ip: {addr[0]}')
-        
-        try:
-            while True:
-                batch_data = Protocol.receive_batch(client_sock)
-                if not batch_data:
-                    logging.info(f'action: client_connection | result: success | ip: {addr[0]} | status: client finished sending')
-                    break
-                if len(batch_data) == 1 and batch_data[0].get("status") == "end":
-                    logging.info(f'action: client_connection | result: success | ip: {addr[0]} | status: received END message')
-                    break
-                
-                result = self._handler.process_batch(batch_data)
-                if result["status"] == "success":
-                    logging.info(f'action: apuesta_recibida | result: success | cantidad: {len(batch_data)}')
-                else:
-                    logging.error(f'action: apuesta_recibida | result: fail | cantidad: {len(batch_data)}')
-                Protocol.send_response(client_sock, result)
-        
-        except ConnectionAbortedError:
-            logging.info(f'action: client_connection | result: success | ip: {addr[0]} | status: client disconnected')
-        except ProtocolError as e:
-            logging.error(f'action: client_handling | result: fail | ip: {addr[0]} | error: protocol_error | details: {e}')
-        except (OSError, ValueError) as e:
-            logging.error(f'action: client_handling | result: fail | ip: {addr[0]} | error: {e}')
-        finally:
-            logging.info(f'action: client_disconnect | result: success | ip: {addr[0]}')
-            if client_sock in self._active_connections:
-                self._active_connections.remove(client_sock)
-            client_sock.close()
-
-    def __announce_winners(self):
-        winners = self._handler.get_winners()
-        for winner in winners:
-            logging.info(f'action: announce_winner | result: success | winner: {winner}')
-
-    def __accept_new_connection(self):
-        logging.info('action: accept_connections | result: in_progress')
-        c, addr = self._server_socket.accept()
-        self._active_connections.append(c)
-        return c
-
-    def __setup_signal_handlers(self):
-        signal.signal(signal.SIGINT, self.__signal_handler)
-        signal.signal(signal.SIGTERM, self.__signal_handler)
-
-    def __signal_handler(self, sig, frame):
-        logging.info(f'action: shutdown | result: in_progress | signal: {sig}')
-        for client_sock in self._active_connections[:]:
+        while self._running:
             try:
-                client_sock.close()
-            except OSError as e:
-                logging.error(f'action: close_client | result: fail | error: {e}')
+                client_sock, addr = self._server_socket.accept()
+                
+                worker_thread = threading.Thread(
+                    target=self._handle_client_connection,
+                    args=(client_sock, addr)
+                )
+                self._active_threads.append(worker_thread)
+                worker_thread.start()
+
+                self._active_threads = [t for t in self._active_threads if t.is_alive()]
+
+            except OSError:
+                if self._running:
+                    logging.error("Error accepting connection.")
+                else:
+                    logging.info("Server socket closed, listener thread shutting down.")
+                break
+
+    def _handle_client_connection(self, client_sock, addr):
+        client_agency = ""
+        logging.info(f'action: client_connection | result: success | ip: {addr[0]}')
+        with client_sock:
+            try:
+                while self._running:
+                    batch_data = Protocol.receive_batch(client_sock)
+                    if not batch_data:
+                        logging.info(f'action: client_connection | result: success | ip: {addr[0]} | status: client finished sending bets')
+                        self._handle_client_finished()
+                        break
+                    
+                    if batch_data and not client_agency:
+                        client_agency = batch_data[0]['agency']
+
+                    result = self._handler.process_batch(batch_data)
+                    log_level = logging.INFO if result["status"] == "success" else logging.ERROR
+                    logging.log(log_level, f'action: apuesta_recibida | result: {result["status"]} | cantidad: {len(batch_data)}')
+                    Protocol.send_response(client_sock, result)
+
+                logging.info(f"Client {addr[0]} ({client_agency}) is waiting for the lottery draw.")
+                self._draw_event.wait()
+
+                winners = self._handler.get_winners_by_agency(int(client_agency))
+                if winners:
+                    Protocol.send_winners(client_sock, winners)
+                    logging.info(f'action: consulta_ganadores | result: success | ip: {addr[0]} | agency: {client_agency}')
+                else:
+                    logging.warning(f"No clients from agency {client_agency} won.")
+
+            except (ConnectionAbortedError, ProtocolError, OSError) as e:
+                logging.error(f'action: client_handling | result: fail | ip: {addr[0]} | error: {e}')
+        
+        logging.info(f'action: client_disconnect | result: success | ip: {addr[0]}')
+
+    def _handle_client_finished(self):
+        with self._state_lock:
+            self._clients_finished_count += 1
+            logging.info(f"Client finished. Total finished: {self._clients_finished_count}/{len(self._active_threads)}")
+            if self._clients_finished_count >= len(self._active_threads):
+                if not self._draw_event.is_set():
+                    self._perform_draw()
+
+    def _perform_draw(self):
+        logging.info("All clients have finished. Performing lottery draw...")
+        self._handler.calculate_winners()
+        logging.info('action: sorteo | result: success')
+        self._draw_event.set()
+    
+    def __setup_signal_handlers(self):
+        signal.signal(signal.SIGINT, self._signal_handler)
+        signal.signal(signal.SIGTERM, self._signal_handler)
+
+    def _signal_handler(self, sig, frame):
+        logging.info(f'action: shutdown | result: in_progress | signal: {sig}')
+        self._running = False
         self._server_socket.close()
-        logging.info('action: shutdown | result: success')
-        sys.exit(0)
+        for thread in self._active_threads:
+            thread.join()
