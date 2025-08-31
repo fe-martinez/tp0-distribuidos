@@ -89,7 +89,7 @@ class Protocol:
             raise ProtocolError(f"Failed to send response: {e}")
 
     def send_winners(client_sock: socket.socket, winners: list[str]):
-        if not winners:
+        if not winners or len(winners) == 0:
             response_str = "NO_WINNERS"
         else:
             response_str = Protocol.fieldSeparator.join(winners)
