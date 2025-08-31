@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
@@ -110,5 +111,8 @@ func main() {
 		log.Criticalf("%s", err)
 		return
 	}
+
+	time.Sleep(1 * time.Second)
+
 	client.StartClientLoop()
 }
