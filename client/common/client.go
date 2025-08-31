@@ -116,5 +116,5 @@ func (c *Client) StartClientLoop() {
 		return
 	}
 
-	log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %s", len(winners))
+	log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %d", len(winners))
 }

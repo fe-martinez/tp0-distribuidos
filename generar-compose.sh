@@ -4,7 +4,7 @@
 # Usage: ./generar-compose.sh [OUTPUT_FILE] [CLIENT_COUNT]
 # Example: ./generar-compose.sh docker-compose.yaml 3
 
-DEFAULT_OUTPUT_FILE="docker-compose.yaml"
+DEFAULT_OUTPUT_FILE="docker-compose-dev.yaml"
 DEFAULT_CLIENT_COUNT=1
 
 OUTPUT_FILE=${1:-$DEFAULT_OUTPUT_FILE}
