@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/op/go-logging"
@@ -134,6 +135,27 @@ func (c *Client) StartClientLoop() {
 		log.Errorf("Failed to parse response payload: %v", err)
 		return
 	}
+
+	// We have to log: action: consulta_ganadores | result: success | cant_ganadores: ${CANT}.
+	// The server sends a list of winners, one per line.
+	// We count the number of lines in the response message to get the number of winners.
+	winners := []string{}
+	if response.Message != "" {
+		winners = append(winners, response.Message)
+	}
+	// If there are more lines, we need to read them as well.
+	for {
+		line, err := c.reader.ReadString('\n')
+		if err != nil {
+			break
+		}
+		line = strings.TrimSpace(line)
+		if line == "" {
+			break
+		}
+		winners = append(winners, line)
+	}
+	log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %d", len(winners))
 
 	log.Infof("Batch processed. Server response - Status: %s, Message: %s", response.Status, response.Message)
 
