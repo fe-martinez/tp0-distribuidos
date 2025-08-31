@@ -66,10 +66,11 @@ func (c *Client) StartClientLoop() {
 		log.Errorf("Client %s failed to connect: %v", c.config.ID, err)
 		return
 	}
-	defer c.Close()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	defer c.Close()
 
 	log.Infof("Client %s starting to send bets.", c.config.ID)
 	var overflowBet *Bet = nil
@@ -115,5 +116,5 @@ func (c *Client) StartClientLoop() {
 		return
 	}
 
-	log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %d", len(winners))
+	log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %s", len(winners))
 }
