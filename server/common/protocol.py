@@ -89,7 +89,10 @@ class Protocol:
             raise ProtocolError(f"Failed to send response: {e}")
 
     def send_winners(client_sock: socket.socket, winners: list[str]):
-        response_str = Protocol.fieldSeparator.join(winners)
+        if not winners:
+            response_str = "NO_WINNERS"
+        else:
+            response_str = Protocol.fieldSeparator.join(winners)
         payload_bytes = response_str.encode(Protocol.encoding)
         header_bytes = f"{len(payload_bytes):0{Protocol.header_size}d}".encode(Protocol.encoding)
         full_message = header_bytes + payload_bytes

@@ -81,7 +81,7 @@ func ReceiveWinners(conn net.Conn) ([]string, error) {
 		return nil, err
 	}
 
-	if response == "" {
+	if response == "NO_WINNERS" {
 		return []string{}, nil
 	}
 
