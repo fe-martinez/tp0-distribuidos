@@ -7,7 +7,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"github.com/op/go-logging"
@@ -27,13 +26,11 @@ type Client struct {
 	file    *os.File
 	scanner *bufio.Scanner
 	conn    net.Conn
-	reader  *bufio.Reader
 }
 
 func NewClient(config ClientConfig) (*Client, error) {
 	filepath := fmt.Sprintf("/.data/agency-%v.csv", config.ID)
 	file, err := os.Open(filepath)
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to open data file: %w", err)
 	}
@@ -50,7 +47,6 @@ func (c *Client) Connect() error {
 		return fmt.Errorf("could not connect to server: %w", err)
 	}
 	c.conn = conn
-	c.reader = bufio.NewReader(conn)
 	log.Infof("Client %s connected to %s", c.config.ID, c.config.ServerAddress)
 	return nil
 }
@@ -75,8 +71,8 @@ func (c *Client) StartClientLoop() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	log.Infof("Client %s starting to send bets.", c.config.ID)
 	var overflowBet *Bet = nil
-
 	for {
 		if ctx.Err() != nil {
 			log.Infof("Client %s stopped due to shutdown signal.", c.config.ID)
@@ -97,67 +93,27 @@ func (c *Client) StartClientLoop() {
 				log.Errorf("Failed to send batch: %v", err)
 				return
 			}
-			log.Debugf("action: send_batch | result: success | client_id: %s | server_status: %s | bets_sent: %d", c.config.ID, response.Status, len(batchResult.Batch.bets))
+			log.Debugf("action: send_batch | result: success | server_status: %s", response.Status)
 		}
 
 		if len(batchResult.Batch.bets) == 0 && overflowBet == nil {
-			log.Infof("End of file reached. Client finished processing.")
+			log.Infof("End of file reached. All bets sent.")
 			break
 		}
 	}
 
-	if _, err := c.conn.Write([]byte("END\n")); err != nil {
-		log.Errorf("Failed to send end of batch message: %v", err)
+	log.Infof("Finished sending all bets. Sending END signal.")
+	if err := SendEndSignal(c.conn); err != nil {
+		log.Errorf("Failed to send END signal: %v", err)
 		return
 	}
 
-	respHeaderBuf := make([]byte, HeaderSize)
-	if _, err := c.reader.Read(respHeaderBuf); err != nil {
-		log.Errorf("Failed to read response header: %v", err)
+	log.Infof("Waiting for lottery results for agency %s...", c.config.ID)
+	winners, err := ReceiveWinners(c.conn)
+	if err != nil {
+		log.Errorf("Failed to receive lottery results: %v", err)
 		return
 	}
 
-	var contentLength int
-	if _, err := fmt.Sscanf(string(respHeaderBuf), "%d", &contentLength); err != nil {
-		log.Errorf("Failed to parse response header: %v", err)
-		return
-	}
-
-	respPayloadBuf := make([]byte, contentLength)
-	if _, err := c.reader.Read(respPayloadBuf); err != nil {
-		log.Errorf("Failed to read response payload: %v", err)
-		return
-	}
-
-	responseStr := string(respPayloadBuf)
-	var response Response
-	if _, err := fmt.Sscanf(responseStr, "%s;%s", &response.Status, &response.Message); err != nil {
-		log.Errorf("Failed to parse response payload: %v", err)
-		return
-	}
-
-	// We have to log: action: consulta_ganadores | result: success | cant_ganadores: ${CANT}.
-	// The server sends a list of winners, one per line.
-	// We count the number of lines in the response message to get the number of winners.
-	winners := []string{}
-	if response.Message != "" {
-		winners = append(winners, response.Message)
-	}
-	// If there are more lines, we need to read them as well.
-	for {
-		line, err := c.reader.ReadString('\n')
-		if err != nil {
-			break
-		}
-		line = strings.TrimSpace(line)
-		if line == "" {
-			break
-		}
-		winners = append(winners, line)
-	}
 	log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %d", len(winners))
-
-	log.Infof("Batch processed. Server response - Status: %s, Message: %s", response.Status, response.Message)
-
-	log.Infof("Client %s finished sending all bets.", c.config.ID)
 }
