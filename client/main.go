@@ -111,4 +111,5 @@ func main() {
 		return
 	}
 	client.StartClientLoop()
+	log.Infof("action: exit | result: success")
 }
