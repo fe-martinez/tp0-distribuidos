@@ -1,22 +1,24 @@
 import socket
 import logging
 import signal
-import multiprocessing
+import threading
 
 from .protocol import Protocol, ProtocolError
 from .bet_handler import BetHandler
 
 class Server:
+    """A concurrent TCP server using a Listener/Worker threading model."""
+
     def __init__(self, port, listen_backlog, client_count):
         self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_socket.bind(('', port))
         self._server_socket.listen(listen_backlog)
         self._running = False
+        self._handler = BetHandler()
         self._client_count = client_count
-        self._active_processes = []
+        self._active_threads = []
         
-        self._lock = multiprocessing.Lock()
-        self._draw_barrier = multiprocessing.Barrier(self._client_count, action=self._perform_draw)
+        self._draw_barrier = threading.Barrier(self._client_count, action=self._perform_draw)
         self.__setup_signal_handlers()
 
     def run(self):
@@ -27,27 +29,26 @@ class Server:
             try:
                 client_sock, addr = self._server_socket.accept()
                 
-                worker_process = multiprocessing.Process(
+                worker_thread = threading.Thread(
                     target=self._handle_client_connection,
-                    args=(client_sock, addr, self._lock, self._draw_barrier)
+                    args=(client_sock, addr)
                 )
-                self._active_processes.append(worker_process)
-                worker_process.start()
+                self._active_threads.append(worker_thread)
+                worker_thread.start()
 
-                self._active_processes = [p for p in self._active_processes if p.is_alive()]
+                self._active_threads = [t for t in self._active_threads if t.is_alive()]
 
             except OSError:
                 if self._running:
                     logging.error("Error accepting connection.")
                 else:
-                    logging.info("Server socket closed, listener shutting down.")
+                    logging.info("Server socket closed, listener thread shutting down.")
                 break
 
         logging.info("action: server_shutdown | result: success")
 
-    def _handle_client_connection(self, client_sock, addr, lock, barrier):
+    def _handle_client_connection(self, client_sock, addr):
         client_agency = ""
-        handler = BetHandler(lock)
         logging.info(f'action: client_connection | result: success | ip: {addr[0]}')
         
         with client_sock:
@@ -61,23 +62,23 @@ class Server:
                     if not client_agency:
                         client_agency = batch_data[0]['agency']
 
-                    result = handler.process_batch(batch_data)
+                    result = self._handler.process_batch(batch_data)
                     log_level = logging.INFO if result["status"] == "success" else logging.ERROR
                     logging.log(log_level, f'action: apuesta_recibida | result: {result["status"]} | cantidad: {len(batch_data)}')
                     Protocol.send_response(client_sock, result)
 
-                logging.info(f"Client {addr[0]} ({client_agency}) has finished sending bets. Waiting for other processes.")
+                logging.info(f"Client {addr[0]} ({client_agency}) has finished sending bets. Waiting for other clients to finish.")
                 
-                barrier.wait()
-                winners = handler.get_winners_by_agency(int(client_agency))
+                self._draw_barrier.wait()
+                winners = self._handler.get_winners_by_agency(int(client_agency))
 
                 Protocol.send_winners(client_sock, winners or []) 
                 logging.info(f'action: sent_winners | result: success | ip: {addr[0]} | agency: {client_agency}')
 
-            except ConnectionAbortedError as e:
+            except (ConnectionAbortedError) as e:
                 logging.error(f'action: client_close | result: success | ip: {addr[0]} | error: {e}')
-            except multiprocessing.ProcessError as e:
-                logging.error(f'action: process_error | result: fail | ip: {addr[0]} | error: {e}')
+            except (threading.BrokenBarrierError) as e:
+                logging.error(f'action: barrier_broken | result: fail | ip: {addr[0]} | error: {e}')
             except (ProtocolError, OSError) as e:
                 logging.error(f'action: client_handling | result: fail | ip: {addr[0]} | error: {e}')
         
@@ -85,8 +86,7 @@ class Server:
 
     def _perform_draw(self):
         logging.info("All clients have finished. Performing lottery draw...")
-        handler = BetHandler(multiprocessing.Lock())
-        handler.calculate_winners()
+        self._handler.calculate_winners()
         logging.info('action: sorteo | result: success')
     
     def __setup_signal_handlers(self):
@@ -98,5 +98,5 @@ class Server:
         self._running = False
         self._server_socket.close()
         self._draw_barrier.abort()
-        for process in self._active_processes:
-            process.join()
+        for thread in self._active_threads:
+            thread.join()
