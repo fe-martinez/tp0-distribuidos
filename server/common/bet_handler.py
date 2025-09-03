@@ -5,7 +5,6 @@ from common.utils import Bet, store_bets, load_bets, has_won
 class BetHandler:
     def __init__(self):
         self._lock = threading.Lock()
-        self._winners = []
 
     def process_batch(self, batch_data: list[dict]):
         logging.debug(f"action: process_batch | result: in_progress | batch_size: {len(batch_data)}")
@@ -34,18 +33,7 @@ class BetHandler:
             logging.error(f"action: process_batch | result: fail | error: storage_error | details: {e}")
             return {"status": "error", "message": f"An unexpected error occurred while storing the batch: {e}"}
 
-    def calculate_winners(self):
-        with self._lock:
-            all_bets = list(load_bets())
-            
-            if not all_bets:
-                logging.warning("Winner calculation requested, but no bets were stored.")
-                return
-
-            self._winners = [bet for bet in all_bets if has_won(bet)]
-
-        logging.info(f"Winner calculation complete. Found {len(self._winners)} total winners from {len(all_bets)} bets.")
-
     def get_winners_by_agency(self, agency_id: int) -> list[str]:
-        agency_winners = [bet.document for bet in self._winners if bet.agency == agency_id]
+        with self._lock:
+            agency_winners = [bet.document for bet in load_bets() if bet.agency == agency_id and has_won(bet) ]
         return agency_winners

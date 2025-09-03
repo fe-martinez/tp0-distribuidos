@@ -16,7 +16,7 @@ class Server:
         self._running = False
         self._handler = BetHandler()
         self._client_count = client_count
-        self._active_threads = []
+        self._active_clients = []
         
         self._draw_barrier = threading.Barrier(self._client_count, action=self._perform_draw)
         self.__setup_signal_handlers()
@@ -27,16 +27,19 @@ class Server:
 
         while self._running:
             try:
-                client_sock, addr = self._server_socket.accept()
+                client_sock, addr = self._server_socket.accept(1.0)
                 
                 worker_thread = threading.Thread(
                     target=self._handle_client_connection,
                     args=(client_sock, addr)
                 )
-                self._active_threads.append(worker_thread)
+                self._active_clients.append((worker_thread, client_sock))
                 worker_thread.start()
 
-                self._active_threads = [t for t in self._active_threads if t.is_alive()]
+                for t, s in list(self._active_clients):
+                    if not t.is_alive():
+                        t.join()
+                        self._active_clients.remove((t, s))
 
             except OSError:
                 if self._running:
@@ -44,7 +47,8 @@ class Server:
                 else:
                     logging.info("Server socket closed, listener thread shutting down.")
                 break
-
+        
+        self.__shutdown(0)
         logging.info("action: server_shutdown | result: success")
 
     def _handle_client_connection(self, client_sock, addr):
@@ -90,13 +94,15 @@ class Server:
         logging.info('action: sorteo | result: success')
     
     def __setup_signal_handlers(self):
-        signal.signal(signal.SIGINT, self._signal_handler)
-        signal.signal(signal.SIGTERM, self._signal_handler)
+        signal.signal(signal.SIGINT, self.__shutdown)
+        signal.signal(signal.SIGTERM, self.__shutdown)
 
-    def _signal_handler(self, sig, frame):
+    def __shutdown(self, sig):
         logging.info(f'action: shutdown | result: in_progress | signal: {sig}')
         self._running = False
         self._server_socket.close()
         self._draw_barrier.abort()
-        for thread in self._active_threads:
-            thread.join()
+        for t, s in self._active_clients:
+            s.close()
+            t.join()
+        logging.info("action: shutdown | result: success")
