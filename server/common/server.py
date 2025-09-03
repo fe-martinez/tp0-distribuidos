@@ -18,7 +18,7 @@ class Server:
         self._client_count = client_count
         self._active_clients = []
         
-        self._draw_barrier = threading.Barrier(self._client_count, action=self._perform_draw)
+        self._draw_barrier = threading.Barrier(self._client_count)
         self.__setup_signal_handlers()
 
     def run(self):
@@ -36,8 +36,7 @@ class Server:
                 )
                 self._active_clients.append((worker_thread, client_sock))
                 worker_thread.start()
-            except socket.timeout:
-                continue
+
             except OSError:
                 if self._running:
                     logging.error("Error accepting connection.")
@@ -89,11 +88,6 @@ class Server:
                 logging.error(f'action: client_handling | result: fail | ip: {addr[0]} | error: {e}')
         
         logging.info(f'action: client_disconnect | result: success | ip: {addr[0]}')
-
-    def _perform_draw(self):
-        logging.info("All clients have finished. Performing lottery draw...")
-        self._handler.calculate_winners()
-        logging.info('action: sorteo | result: success')
     
     def __setup_signal_handlers(self):
         signal.signal(signal.SIGINT, self.__shutdown)
