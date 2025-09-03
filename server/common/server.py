@@ -17,91 +17,112 @@ class Server:
         self._handler = BetHandler()
         self._client_count = client_count
         self._active_clients = []
-        
+        self._clients_lock = threading.Lock()
+
         self._draw_barrier = threading.Barrier(self._client_count)
         self.__setup_signal_handlers()
 
     def run(self):
         self._running = True
-        logging.info(f"Server starting. Awaiting {self._client_count} clients.")
+        logging.info(f"action: server_start | result: success | expected_clients: {self._client_count}")
         self._server_socket.settimeout(1.0)
 
         while self._running:
             try:
                 client_sock, addr = self._server_socket.accept()
-                
+
                 worker_thread = threading.Thread(
                     target=self._handle_client_connection,
                     args=(client_sock, addr)
                 )
-                self._active_clients.append((worker_thread, client_sock))
+                with self._clients_lock:
+                    self._active_clients.append((worker_thread, client_sock))
                 worker_thread.start()
 
             except socket.timeout:
                 continue
-            except OSError:
+            except OSError as e:
                 if self._running:
-                    logging.error("action: server_accept | result: fail | error: accept_timeout_or_error")
+                    logging.error(f"action: server_accept | result: fail | error: {e}")
                 else:
-                    logging.info("Server socket closed, listener thread shutting down.")
+                    logging.info("action: listener_shutdown | result: success")
                 break
             finally:
-                for t, s in list(self._active_clients):
-                    if not t.is_alive():
-                        s.close()
-                        t.join()
-                        self._active_clients.remove((t, s))
+                with self._clients_lock:
+                    for t, s in list(self._active_clients):
+                        if not t.is_alive():
+                            try:
+                                s.close()
+                                t.join(timeout=1.0)
+                            except Exception as e:
+                                logging.error(f"action: client_cleanup | result: fail | error: {e}")
+                            self._active_clients.remove((t, s))
 
         self.__shutdown(0)
         logging.info("action: server_shutdown | result: success")
 
     def _handle_client_connection(self, client_sock, addr):
-        client_agency = ""
-        logging.info(f'action: client_connection | result: success | ip: {addr[0]}')
-        
+        client_agency = None
+        logging.info(f"action: client_connection | result: success | ip: {addr[0]}")
+
         with client_sock:
             try:
                 while True:
                     batch_data = Protocol.receive_batch(client_sock)
                     if not batch_data:
-                        logging.info(f'action: client_connection | result: success | ip: {addr[0]} | status: client finished sending bets')
+                        logging.info(f"action: client_connection | result: success | ip: {addr[0]} | status: finished_sending_bets")
                         break
-                    
-                    if not client_agency:
-                        client_agency = batch_data[0]['agency']
+
+                    if client_agency is None:
+                        client_agency = batch_data[0].get('agency', None)
 
                     result = self._handler.process_batch(batch_data)
                     log_level = logging.INFO if result["status"] == "success" else logging.ERROR
-                    logging.log(log_level, f'action: apuesta_recibida | result: {result["status"]} | cantidad: {len(batch_data)}')
+                    logging.log(log_level, f"action: apuesta_recibida | result: {result['status']} | cantidad: {len(batch_data)}")
                     Protocol.send_response(client_sock, result)
 
-                logging.info(f"Client {addr[0]} ({client_agency}) has finished sending bets. Waiting for other clients to finish.")
-                
+                logging.info(f"action: client_waiting | result: success | ip: {addr[0]} | agency: {client_agency}")
+
                 self._draw_barrier.wait()
-                winners = self._handler.get_winners_by_agency(int(client_agency))
+                winners = self._handler.get_winners_by_agency(int(client_agency)) if client_agency else []
 
-                Protocol.send_winners(client_sock, winners or []) 
-                logging.info(f'action: sent_winners | result: success | ip: {addr[0]} | agency: {client_agency}')
+                Protocol.send_winners(client_sock, winners or [])
+                logging.info(f"action: sent_winners | result: success | ip: {addr[0]} | agency: {client_agency}")
 
-            except (ConnectionAbortedError) as e:
-                logging.error(f'action: client_close | result: success | ip: {addr[0]} | error: {e}')
-            except (threading.BrokenBarrierError) as e:
-                logging.error(f'action: barrier_broken | result: fail | ip: {addr[0]} | error: {e}')
+            except ConnectionAbortedError as e:
+                logging.error(f"action: client_close | result: success | ip: {addr[0]} | error: {e}")
+            except threading.BrokenBarrierError as e:
+                logging.info(f"action: barrier_broken | result: interrupted | ip: {addr[0]} | error: {e}")
             except (ProtocolError, OSError) as e:
-                logging.error(f'action: client_handling | result: fail | ip: {addr[0]} | error: {e}')
-        
-        logging.info(f'action: client_disconnect | result: success | ip: {addr[0]}')
-    
+                logging.error(f"action: client_handling | result: fail | ip: {addr[0]} | error: {e}")
+
+        logging.info(f"action: client_disconnect | result: success | ip: {addr[0]}")
+
     def __setup_signal_handlers(self):
         signal.signal(signal.SIGINT, self.__shutdown)
         signal.signal(signal.SIGTERM, self.__shutdown)
 
-    def __shutdown(self, sig):
-        logging.info(f'action: shutdown | result: in_progress | signal: {sig}')
+    def __shutdown(self, sig, frame=None):
+        logging.info(f"action: shutdown | result: in_progress | signal: {sig}")
         self._running = False
-        self._server_socket.close()
-        self._draw_barrier.abort()
-        for t, s in self._active_clients:
-            s.close()
-            t.join()
+
+        try:
+            self._server_socket.close()
+        except Exception as e:
+            logging.error(f"action: socket_close | result: fail | error: {e}")
+
+        try:
+            self._draw_barrier.abort()
+        except Exception:
+            pass
+
+        with self._clients_lock:
+            for t, s in self._active_clients:
+                try:
+                    s.close()
+                    t.join(timeout=1.0)
+                except Exception as e:
+                    logging.error(f"action: client_join | result: fail | error: {e}")
+            self._active_clients.clear()
+
         logging.info("action: shutdown | result: success")
