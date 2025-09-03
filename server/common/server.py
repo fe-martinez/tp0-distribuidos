@@ -48,7 +48,8 @@ class Server:
             finally:
                 for t, s in list(self._active_clients):
                     if not t.is_alive():
-                        t.join() 
+                        s.close()
+                        t.join()
                         self._active_clients.remove((t, s))
 
         self.__shutdown(0)
