@@ -37,9 +37,11 @@ class Server:
                 self._active_clients.append((worker_thread, client_sock))
                 worker_thread.start()
 
+            except socket.timeout:
+                continue
             except OSError:
                 if self._running:
-                    logging.error("Error accepting connection.")
+                    logging.error("action: server_accept | result: fail | error: accept_timeout_or_error")
                 else:
                     logging.info("Server socket closed, listener thread shutting down.")
                 break
