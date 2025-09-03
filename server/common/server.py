@@ -24,10 +24,11 @@ class Server:
     def run(self):
         self._running = True
         logging.info(f"Server starting. Awaiting {self._client_count} clients.")
+        self._server_socket.settimeout(1.0)
 
         while self._running:
             try:
-                client_sock, addr = self._server_socket.accept(1.0)
+                client_sock, addr = self._server_socket.accept()
                 
                 worker_thread = threading.Thread(
                     target=self._handle_client_connection,
@@ -35,19 +36,20 @@ class Server:
                 )
                 self._active_clients.append((worker_thread, client_sock))
                 worker_thread.start()
-
-                for t, s in list(self._active_clients):
-                    if not t.is_alive():
-                        t.join()
-                        self._active_clients.remove((t, s))
-
+            except socket.timeout:
+                continue
             except OSError:
                 if self._running:
                     logging.error("Error accepting connection.")
                 else:
                     logging.info("Server socket closed, listener thread shutting down.")
                 break
-        
+            finally:
+                for t, s in list(self._active_clients):
+                    if not t.is_alive():
+                        t.join() 
+                        self._active_clients.remove((t, s))
+
         self.__shutdown(0)
         logging.info("action: server_shutdown | result: success")
 
