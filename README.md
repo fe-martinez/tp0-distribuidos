@@ -1,5 +1,7 @@
 # Ejercicio 8: Concurrencia
 
+El protocolo se explica en los ejercicios anteriores.
+
 ### Modelo de concurrencia
 
 Listener/Worker con multithreading:
