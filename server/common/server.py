@@ -49,6 +49,11 @@ class Server:
         for t in threads:
             t.join()
 
+        try:
+            self._server_socket.close()
+        except OSError:
+            pass
+    
         logging.info("action: server_shutdown | result: success")
 
     def _handle_client_connection(self, client_sock, addr):
