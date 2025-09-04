@@ -31,14 +31,7 @@ class Server:
                     logging.info(f'action: client_connection | result: success | ip: {addr[0]} | status: client finished sending')
                     break
 
-                try:
-                    batch = Batch.from_payload(payload_bytes, Protocol.encoding, Protocol.field_separator, max_bets=self._max_bets)
-                except ValueError as e:
-                    logging.error(f'action: apuesta_recibida | result: fail | cantidad: 0 | error: {e}')
-                    err = f"error{Protocol.field_separator}Invalid batch data: {e}"
-                    Protocol.send(client_sock, err.encode(Protocol.encoding))
-                    continue
-
+                batch = Batch.from_payload(payload_bytes, Protocol.encoding, Protocol.field_separator)
                 result = self._handler.process_batch(batch)
                 
                 if result["status"] == "success":
@@ -46,12 +39,12 @@ class Server:
                 else:
                     logging.error(f'action: apuesta_recibida | result: fail | cantidad: {len(batch.bets)}')
 
-                response_str = f"{result['status']}{Protocol.field_separator}{result['message']}"
+                response_str = f"{result['status']};{result['message']}"
                 Protocol.send(client_sock, response_str.encode(Protocol.encoding))
         except ValueError as e:
             num_bets_estimate = len(payload_bytes.decode(Protocol.encoding, errors='ignore').split('\n'))
             logging.error(f'action: apuesta_recibida | result: fail | cantidad: {num_bets_estimate}')
-            response_str = f"error{Protocol.field_separator}Invalid batch data: {e}"
+            response_str = f"error;Invalid batch data: {e}"
             Protocol.send(client_sock, response_str.encode(Protocol.encoding))
         except ConnectionAbortedError:
             logging.info(f'action: client_connection | result: success | ip: {addr[0]} | status: client disconnected')
@@ -62,7 +55,6 @@ class Server:
             if client_sock in self._active_connections:
                 self._active_connections.remove(client_sock)
             client_sock.close()
-
     def __accept_new_connection(self):
         logging.info('action: accept_connections | result: in_progress')
         c, addr = self._server_socket.accept()
