@@ -123,9 +123,9 @@ func (c *Client) sendBatch(batch *Batch) {
 }
 
 func (c *Client) sendEndSignal() {
-	endMessage := []byte(fmt.Sprintf("%-*s", HeaderSize, "END"))
-
-	if err := writeAll(c.conn, endMessage); err != nil {
+	body := []byte("END")
+	header := []byte(fmt.Sprintf("%0*d", HeaderSize, len(body)))
+	if err := writeAll(c.conn, append(header, body...)); err != nil {
 		log.Errorf("action: send_end_signal | result: fail | client_id: %s | error: %v", c.config.ID, err)
 		return
 	}

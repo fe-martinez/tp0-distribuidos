@@ -9,7 +9,6 @@ class Protocol:
     header_size = 8
     field_separator = ';'
 
-    @staticmethod
     def _receive_all(client_sock, length):
         chunks = []
         bytes_received = 0
@@ -24,14 +23,9 @@ class Protocol:
              raise ConnectionAbortedError("Socket connection broken.")
         return b''.join(chunks)
 
-    @staticmethod
     def receive(client_sock):
         try:
             header_bytes = Protocol._receive_all(client_sock, Protocol.header_size)
-
-            if header_bytes.decode(Protocol.encoding, errors='ignore').strip() == "END":
-                return b'END'
-
             msg_len = int(header_bytes.decode(Protocol.encoding))
             if msg_len == 0:
                 return b''
@@ -40,9 +34,7 @@ class Protocol:
         except (UnicodeDecodeError, ValueError):
             raise ProtocolError("Invalid header encoding or length.")
 
-    @staticmethod
     def send(client_sock, payload_bytes):
-        """Frames a byte payload with a length-header and sends it."""
         try:
             header_bytes = f"{len(payload_bytes):0{Protocol.header_size}d}".encode(Protocol.encoding)
             full_message = header_bytes + payload_bytes
