@@ -26,9 +26,9 @@ func (b Bet) GetBytesSize() int {
 }
 
 type Batch struct {
-	bets        []Bet
-	currentSize int
-	currentBets int
+	Bets        []Bet
+	CurrentSize int
+	CurrentBets int
 }
 
 type BatchResult struct {
@@ -43,18 +43,16 @@ func CreateBatch(scanner *bufio.Scanner, maxSize int, maxBets int, initialBet *B
 	if initialBet != nil {
 		betSize := initialBet.GetBytesSize()
 		if betSize <= maxSize && 1 <= maxBets {
-			batch.bets = append(batch.bets, *initialBet)
-			batch.currentSize += betSize
-			batch.currentBets++
+			batch.Bets = append(batch.Bets, *initialBet)
+			batch.CurrentSize += betSize
+			batch.CurrentBets++
 		} else {
-			overflowBet = initialBet
-			return BatchResult{Batch: batch, OverflowBet: overflowBet}, nil
+			return BatchResult{Batch: batch, OverflowBet: initialBet}, nil
 		}
 	}
 
 	for scanner.Scan() {
-		line := scanner.Text()
-		fields := strings.Split(line, ",")
+		fields := strings.Split(scanner.Text(), ",")
 		if len(fields) != 5 {
 			continue
 		}
@@ -62,15 +60,20 @@ func CreateBatch(scanner *bufio.Scanner, maxSize int, maxBets int, initialBet *B
 		bet := Bet{fields[0], fields[1], fields[2], fields[3], fields[4]}
 		betSize := bet.GetBytesSize()
 
-		if (batch.currentSize+betSize > maxSize && batch.currentSize > 0) || (batch.currentBets+1 > maxBets && batch.currentBets > 0) {
+		if (batch.CurrentSize+betSize > maxSize && batch.CurrentSize > 0) ||
+			(batch.CurrentBets+1 > maxBets && batch.CurrentBets > 0) {
 			overflowBet = &bet
 			break
 		}
 
-		batch.currentSize += betSize
-		batch.currentBets++
-		batch.bets = append(batch.bets, bet)
+		batch.Bets = append(batch.Bets, bet)
+		batch.CurrentSize += betSize
+		batch.CurrentBets++
 	}
 
-	return BatchResult{Batch: batch, OverflowBet: overflowBet}, scanner.Err()
+	if err := scanner.Err(); err != nil {
+		return BatchResult{}, fmt.Errorf("failed to scan input file: %w", err)
+	}
+
+	return BatchResult{Batch: batch, OverflowBet: overflowBet}, nil
 }

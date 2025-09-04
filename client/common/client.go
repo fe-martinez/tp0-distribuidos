@@ -32,8 +32,9 @@ func NewClient(config ClientConfig) (*Client, error) {
 	filepath := fmt.Sprintf("/.data/agency-%v.csv", config.ID)
 	file, err := os.Open(filepath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open data file: %w", err)
+		return nil, fmt.Errorf("failed to open data file %s: %w", filepath, err)
 	}
+
 	return &Client{
 		config:  config,
 		file:    file,
@@ -47,37 +48,43 @@ func (c *Client) Connect() error {
 		return fmt.Errorf("could not connect to server: %w", err)
 	}
 	c.conn = conn
-	log.Infof("action: connect | result: success | client_id: %s | server_address: %s", c.config.ID, c.config.ServerAddress)
+	log.Infof("action: connect | result: success | client_id: %s | server_address: %s",
+		c.config.ID, c.config.ServerAddress)
 	return nil
 }
 
 func (c *Client) Close() {
 	if c.file != nil {
-		c.file.Close()
+		_ = c.file.Close()
+		c.file = nil
 	}
 	if c.conn != nil {
-		c.conn.Close()
+		_ = c.conn.Close()
+		c.conn = nil
 	}
-	log.Infof("Client %s connection closed.", c.config.ID)
+	log.Infof("action: close_client | result: success | client_id: %s", c.config.ID)
 }
 
 func (c *Client) StartClientLoop() {
+	defer c.Close()
+
 	if err := c.Connect(); err != nil {
-		log.Errorf("Client %s failed to connect: %v", c.config.ID, err)
+		log.Errorf("action: connect | result: fail | client_id: %s | error: %v", c.config.ID, err)
 		return
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	defer c.Close()
-
 	log.Infof("action: start_sending | result: success | client_id: %s", c.config.ID)
-	var overflowBet *Bet = nil
+
+	var overflowBet *Bet
 	for {
-		if ctx.Err() != nil {
+		select {
+		case <-ctx.Done():
 			log.Infof("action: stop_sending | result: success | client_id: %s", c.config.ID)
 			return
+		default:
 		}
 
 		batchResult, err := CreateBatch(c.scanner, c.config.MaxBatchSize, c.config.MaxBatchBets, overflowBet)
@@ -88,16 +95,17 @@ func (c *Client) StartClientLoop() {
 
 		overflowBet = batchResult.OverflowBet
 
-		if len(batchResult.Batch.bets) > 0 {
+		if len(batchResult.Batch.Bets) > 0 {
 			response, err := SendBatch(c.conn, batchResult.Batch, c.config.ID)
 			if err != nil {
 				log.Errorf("action: send_batch | result: fail | client_id: %s | error: %v", c.config.ID, err)
 				return
 			}
-			log.Debugf("action: send_batch | result: success | server_status: %s", response.Status)
+			log.Debugf("action: send_batch | result: success | client_id: %s | server_status: %s",
+				c.config.ID, response.Status)
 		}
 
-		if len(batchResult.Batch.bets) == 0 && overflowBet == nil {
+		if len(batchResult.Batch.Bets) == 0 && overflowBet == nil {
 			log.Infof("action: end_of_file | result: success | client_id: %s", c.config.ID)
 			break
 		}
@@ -111,9 +119,10 @@ func (c *Client) StartClientLoop() {
 
 	winners, err := ReceiveWinners(c.conn)
 	if err != nil {
-		log.Errorf("action: consulta_ganadores | result: fail | client_id: %s | error: %v", c.config.ID, err)
+		log.Errorf("action: receive_winners | result: fail | client_id: %s | error: %v", c.config.ID, err)
 		return
 	}
 
-	log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %d", len(winners))
+	log.Infof("action: receive_winners | result: success | client_id: %s | winners_count: %d",
+		c.config.ID, len(winners))
 }
