@@ -16,7 +16,9 @@ class Server:
         self._client_count = client_count
         self._active_clients = []
         self._clients_lock = threading.Lock()
-        self._draw_barrier = threading.Barrier(self._client_count)
+        self._bets_lock = threading.Lock()
+        self._draw_barrier = threading.Barrier(self._client_count, action=self.__on_ready_to_draw)
+        self._winners = {}
         self.__setup_signal_handlers()
 
     def run(self):
@@ -62,7 +64,7 @@ class Server:
                     try:
                         batch = Batch.from_payload(payload_bytes, Protocol.encoding, Protocol.field_separator)
                     except ValueError as e:
-                        logging.error(f"action: client_handling | result: fail | ip: {addr[0]} | error: invalid_batch | details: {e}")
+                        logging.error(f"action: apuesta_recibida | result: fail | cantidad: 0")
                         error_response_str = f"error{Protocol.field_separator}Invalid batch format: {e}"
                         Protocol.send(client_sock, error_response_str.encode(Protocol.encoding))
                         continue
@@ -70,9 +72,9 @@ class Server:
                     if client_agency is None:
                         client_agency = batch.agency_id
 
-                    result = self._handler.process_batch(batch)
+                    with self._bets_lock:
+                        result = self._handler.process_batch(batch)
 
-                    
                     log_level = logging.INFO if result["status"] == "success" else logging.ERROR
                     logging.log(log_level, f"action: apuesta_recibida | result: {result['status']} | cantidad: {len(batch.bets)}")
                     
@@ -82,8 +84,10 @@ class Server:
                 logging.info(f"action: client_waiting_for_draw | result: success | ip: {addr[0]} | agency: {client_agency}")
                 self._draw_barrier.wait()
                 
-                winners = self._handler.get_winners_by_agency(client_agency or "0")
-                winners_payload_str = "NO_WINNERS" if not winners else Protocol.field_separator.join(winners)
+                agency_key = int(client_agency)
+                winners_docs = self._winners.get(agency_key, [])
+                winners_payload_str = "NO_WINNERS" if not winners_docs else Protocol.field_separator.join(winners_docs)
+                Protocol.send(client_sock, winners_payload_str.encode(Protocol.encoding))
                 
                 Protocol.send(client_sock, winners_payload_str.encode(Protocol.encoding))
                 logging.info(f"action: sent_winners | result: success | ip: {addr[0]} | agency: {client_agency}")
@@ -96,6 +100,10 @@ class Server:
                 logging.error(f"action: socket_error | result: fail | ip: {addr[0]} | error: {e}")
 
         logging.info(f"action: client_disconnect | result: success | ip: {addr[0]}")
+
+    def __on_ready_to_draw(self):
+        self._winners = self._handler.process_winners()
+        logging.info("action: sorteo | result: success")
 
     def __setup_signal_handlers(self):
         signal.signal(signal.SIGINT, self.__shutdown)
