@@ -50,6 +50,9 @@ class Server:
                 if payload_bytes == b'END':
                     logging.info(f'action: client_connection | result: success | ip: {addr[0]} | status: client finished sending bets')
                     break
+                if payload_bytes == b'':
+                    logging.info(f"action: client_connection | result: success | ip: {addr[0]} | status: client sent empty payload")
+                    continue
                 
                 batch = Batch.from_payload(payload_bytes, Protocol.encoding, Protocol.field_separator)
                 if not conn_info["agency"]:
