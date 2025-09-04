@@ -50,6 +50,7 @@ func (c *Client) handleShutdown(ctx context.Context) {
 	c.Close()
 }
 
+// In this case we only need to send 1 message and wait for a response
 func (c *Client) StartClientLoop() {
 	defer c.Close()
 	log.Infof("action: start_client | result: success | client_id: %v | server_address: %v", c.config.ID, c.config.ServerAddress)
@@ -64,45 +65,38 @@ func (c *Client) StartClientLoop() {
 
 	go c.handleShutdown(ctx)
 
-	for msgID := 1; msgID <= c.config.LoopAmount; msgID++ {
-		if ctx.Err() != nil {
-			break
-		}
+	bet, err := loadBetFromEnv()
+	if err != nil {
+		log.Errorf("action: load_bet | result: fail | client_id: %v | error: %v", c.config.ID, err)
+		return
+	}
 
-		bet, err := loadBetFromEnv()
-		if err != nil {
-			log.Errorf("action: load_bet | result: fail | client_id: %v | error: %v", c.config.ID, err)
+	payload := bet.Serialize(c.config.ID)
+
+	response, err := Send(c.conn, payload)
+	if err != nil {
+		if errors.Is(err, net.ErrClosed) {
+			log.Infof("action: client_stopped_during_send | result: success | client_id: %v", c.config.ID)
 			return
 		}
 
-		payload := bet.Serialize(c.config.ID)
-
-		response, err := Send(c.conn, payload)
-		if err != nil {
-			if errors.Is(err, net.ErrClosed) {
-				log.Infof("action: client_stopped_during_send | result: success | client_id: %v", c.config.ID)
-				break
-			}
-
-			var protocolErr ProtocolError
-			if errors.As(err, &protocolErr) {
-				log.Errorf("action: send_bet | result: fail | client_id: %v | error_type: protocol_error | details: %v", c.config.ID, protocolErr.Message)
-			} else {
-				log.Errorf("action: send_bet | result: fail | client_id: %v | error_type: general | error: %v", c.config.ID, err)
-			}
-			time.Sleep(c.config.LoopPeriod)
-			continue
-		}
-
-		if response.Status == "ok" || response.Status == "success" {
-			log.Infof("action: apuesta_enviada | result: success | dni: %s | numero: %d", bet.ClientID, bet.BetNumber)
+		var protocolErr ProtocolError
+		if errors.As(err, &protocolErr) {
+			log.Errorf("action: send_bet | result: fail | client_id: %v | error_type: protocol_error | details: %v", c.config.ID, protocolErr.Message)
 		} else {
-			log.Warningf("action: apuesta_enviada | result: fail | client_id: %v | server_error: %s", c.config.ID, response.Message)
+			log.Errorf("action: send_bet | result: fail | client_id: %v | error_type: general | error: %v", c.config.ID, err)
 		}
-
-		log.Infof("action: receive_message | result: success | client_id: %v | msg: %s;%s", c.config.ID, response.Status, response.Message)
-		time.Sleep(c.config.LoopPeriod)
+		return
 	}
+
+	if response.Status == "ok" || response.Status == "success" {
+		log.Infof("action: apuesta_enviada | result: success | dni: %s | numero: %d", bet.ClientID, bet.BetNumber)
+	} else {
+		log.Warningf("action: apuesta_enviada | result: fail | client_id: %v | server_error: %s", c.config.ID, response.Message)
+	}
+
+	log.Infof("action: receive_message | result: success | client_id: %v | msg: %s;%s", c.config.ID, response.Status, response.Message)
+	time.Sleep(c.config.LoopPeriod)
 
 	if ctx.Err() != nil {
 		log.Infof("action: stop_client | result: success | client_id: %v", c.config.ID)
