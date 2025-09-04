@@ -89,7 +89,10 @@ func (c *Client) StartClientLoop() {
 		bet := Bet{fields[0], fields[1], fields[2], fields[3], fields[4]}
 
 		if !batch.Add(bet) {
-			c.sendBatch(batch)
+			if err := c.sendBatch(batch); err != nil {
+				log.Errorf("Failed to send batch: %v", err)
+				return
+			}
 
 			batch = NewBatch(c.config.MaxBatchSize, c.config.MaxBatchBets)
 			batch.Add(bet)
@@ -97,7 +100,10 @@ func (c *Client) StartClientLoop() {
 	}
 
 	if batch.BetCount() > 0 {
-		c.sendBatch(batch)
+		if err := c.sendBatch(batch); err != nil {
+			log.Errorf("Failed to send batch: %v", err)
+			return
+		}
 	}
 
 	if err := c.scanner.Err(); err != nil {
@@ -107,16 +113,28 @@ func (c *Client) StartClientLoop() {
 	log.Infof("Client %s finished sending all bets.", c.config.ID)
 }
 
-func (c *Client) sendBatch(batch *Batch) {
+func (c *Client) sendBatch(batch *Batch) error {
 	payload := batch.Serialize(c.config.ID)
 	if payload == nil {
-		return
+		return nil
 	}
 
-	response, err := Send(c.conn, payload)
-	if err != nil {
+	if err := Send(c.conn, payload); err != nil {
 		log.Errorf("Failed to send batch: %v", err)
-		return
+		return err
 	}
+
+	response, err := Receive(c.conn)
+	if err != nil {
+		log.Errorf("Failed to receive acknowledgment: %v", err)
+		return err
+	}
+
+	if response.Status == "error" {
+		log.Errorf("action: send_batch | result: fail | client_id: %s | message: %s", c.config.ID, response.Message)
+		return fmt.Errorf("server error: %s", response.Message)
+	}
+
 	log.Infof("action: send_batch | result: success | client_id: %s | server_status: %s | bets_sent: %d", c.config.ID, response.Status, batch.BetCount())
+	return nil
 }

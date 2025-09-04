@@ -49,22 +49,26 @@ func writeAll(conn net.Conn, buf []byte) error {
 	return nil
 }
 
-func Send(conn net.Conn, payload []byte) (Response, error) {
+func Send(conn net.Conn, payload []byte) error {
 	if len(payload) == 0 {
-		return Response{}, ProtocolError{Message: "cannot send an empty payload"}
+		return ProtocolError{Message: "cannot send an empty payload"}
 	}
 
 	headerBytes := []byte(fmt.Sprintf("%0*d", HeaderSize, len(payload)))
 	fullMessage := append(headerBytes, payload...)
 
 	if err := conn.SetWriteDeadline(time.Now().Add(WriteTimeout)); err != nil {
-		return Response{}, fmt.Errorf("failed to set write timeout: %w", err)
+		return fmt.Errorf("failed to set write timeout: %w", err)
 	}
 
 	if err := writeAll(conn, fullMessage); err != nil {
-		return Response{}, ProtocolError{Message: "failed to send message", Err: err}
+		return ProtocolError{Message: "failed to send message", Err: err}
 	}
 
+	return nil
+}
+
+func Receive(conn net.Conn) (Response, error) {
 	if err := conn.SetReadDeadline(time.Now().Add(ReadTimeout)); err != nil {
 		return Response{}, fmt.Errorf("failed to set read timeout: %w", err)
 	}
