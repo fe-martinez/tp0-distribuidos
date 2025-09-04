@@ -45,10 +45,10 @@ func NewClient(config ClientConfig) (*Client, error) {
 func (c *Client) Connect() error {
 	conn, err := net.DialTimeout("tcp", c.config.ServerAddress, ConnectionTimeout)
 	if err != nil {
-		return fmt.Errorf("could not connect to server: %w", err)
+		return fmt.Errorf("actions: connect | result: fail | client_id: %s | server_address: %s | error: %v", c.config.ID, c.config.ServerAddress, err)
 	}
 	c.conn = conn
-	log.Infof("Client %s connected to %s", c.config.ID, c.config.ServerAddress)
+	log.Infof("action: connect | result: success | client_id: %s | server_address: %s", c.config.ID, c.config.ServerAddress)
 	return nil
 }
 
@@ -59,24 +59,35 @@ func (c *Client) Close() {
 	if c.conn != nil {
 		c.conn.Close()
 	}
-	log.Infof("Client %s connection closed.", c.config.ID)
+	if c.scanner != nil {
+		c.scanner = nil
+	}
+	log.Infof("action: client_close | result: success | client_id: %s", c.config.ID)
+}
+
+func (c *Client) handleShutdown(ctx context.Context) {
+	<-ctx.Done()
+	log.Infof("action: shutdown_signal_received | result: success | client_id: %s", c.config.ID)
+	c.Close()
 }
 
 func (c *Client) StartClientLoop() {
+	defer c.Close()
 	if err := c.Connect(); err != nil {
 		log.Errorf("Client %s failed to connect: %v", c.config.ID, err)
 		return
 	}
-	defer c.Close()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	go c.handleShutdown(ctx)
 
 	batch := NewBatch(c.config.MaxBatchSize, c.config.MaxBatchBets)
 
 	for c.scanner.Scan() {
 		if ctx.Err() != nil {
-			log.Infof("Client %s stopped due to shutdown signal.", c.config.ID)
+			log.Infof("action: stop_sending | result: success | client_id: %s", c.config.ID)
 			return
 		}
 
@@ -90,7 +101,7 @@ func (c *Client) StartClientLoop() {
 
 		if !batch.Add(bet) {
 			if err := c.sendBatch(batch); err != nil {
-				log.Errorf("Failed to send batch: %v", err)
+				log.Errorf("action: send_batch | result: fail | client_id: %s | error: %v", c.config.ID, err)
 				return
 			}
 
@@ -99,18 +110,19 @@ func (c *Client) StartClientLoop() {
 		}
 	}
 
+	if err := c.scanner.Err(); err != nil {
+		log.Errorf("action: read_file | result: fail | client_id: %s | error: %v", c.config.ID, err)
+		return
+	}
+
 	if batch.BetCount() > 0 {
 		if err := c.sendBatch(batch); err != nil {
-			log.Errorf("Failed to send batch: %v", err)
+			log.Errorf("action: send_batch | result: fail | client_id: %s | error: %v", c.config.ID, err)
 			return
 		}
 	}
 
-	if err := c.scanner.Err(); err != nil {
-		log.Errorf("Error reading from file: %v", err)
-	}
-
-	log.Infof("Client %s finished sending all bets.", c.config.ID)
+	log.Infof("action: read_file | result: success | client_id: %s", c.config.ID)
 }
 
 func (c *Client) sendBatch(batch *Batch) error {
