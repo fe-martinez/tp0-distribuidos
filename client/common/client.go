@@ -60,19 +60,20 @@ func (c *Client) Close() {
 	if c.conn != nil {
 		c.conn.Close()
 	}
-	log.Infof("action: close_connection | result: success | client_id: %s", c.config.ID)
+	if c.scanner != nil {
+		c.scanner = nil
+	}
+	log.Infof("action: client_close | result: success | client_id: %s", c.config.ID)
 }
 
 func (c *Client) handleShutdown(ctx context.Context) {
 	<-ctx.Done()
-
 	log.Infof("action: shutdown_signal_received | result: success | client_id: %s", c.config.ID)
 	c.Close()
 }
 
 func (c *Client) StartClientLoop() {
 	defer c.Close()
-
 	if err := c.Connect(); err != nil {
 		log.Errorf("actions: start_client_loop | result: fail | client_id: %s | error: %v", c.config.ID, err)
 		return
@@ -87,6 +88,11 @@ func (c *Client) StartClientLoop() {
 	batch := NewBatch(c.config.MaxBatchSize, c.config.MaxBatchBets)
 
 	for c.scanner.Scan() {
+		if ctx.Err() != nil {
+			log.Infof("action: stop_sending | result: success | client_id: %s", c.config.ID)
+			return
+		}
+
 		line := c.scanner.Text()
 		fields := strings.Split(line, ",")
 		if len(fields) != 5 {
@@ -108,6 +114,7 @@ func (c *Client) StartClientLoop() {
 			return
 		}
 		log.Errorf("action: file_scan | result: fail | client_id: %s | error: %v", c.config.ID, err)
+		return
 	}
 
 	if !batch.IsEmpty() {
