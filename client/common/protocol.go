@@ -37,6 +37,18 @@ func (e ProtocolError) Unwrap() error {
 	return e.Err
 }
 
+func writeAll(conn net.Conn, buf []byte) error {
+	totalWritten := 0
+	for totalWritten < len(buf) {
+		n, err := conn.Write(buf[totalWritten:])
+		if err != nil {
+			return err
+		}
+		totalWritten += n
+	}
+	return nil
+}
+
 func Send(conn net.Conn, payload []byte) (Response, error) {
 	if len(payload) == 0 {
 		return Response{}, ProtocolError{Message: "cannot send an empty payload"}
@@ -49,8 +61,7 @@ func Send(conn net.Conn, payload []byte) (Response, error) {
 		return Response{}, fmt.Errorf("failed to set write timeout: %w", err)
 	}
 
-	_, err := conn.Write(fullMessage)
-	if err != nil {
+	if err := writeAll(conn, fullMessage); err != nil {
 		return Response{}, ProtocolError{Message: "failed to send message", Err: err}
 	}
 
