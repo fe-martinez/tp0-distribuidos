@@ -24,7 +24,7 @@ class Protocol:
             if nl != -1:
                 line = bytes(chunks[:nl])
                 text = line.decode(Protocol.encoding)
-                return Protocol.parse_bet_line(text)
+                return text
     
     def parse_bet_line(line: str) -> dict[str, str]:
         text = line.strip()

@@ -3,6 +3,7 @@ package common
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"net"
 	"strings"
 	"time"
@@ -53,6 +54,9 @@ func readUntilDelimiter(conn net.Conn, delimiter byte) ([]byte, error) {
 	for {
 		bytesRead, err := conn.Read(buffer)
 		if err != nil {
+			if err == io.EOF {
+				break
+			}
 			return nil, fmt.Errorf("failed to read data: %w", err)
 		}
 		responseBuf.Write(buffer[:bytesRead])
