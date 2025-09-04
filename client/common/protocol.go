@@ -37,25 +37,21 @@ func (e ProtocolError) Unwrap() error {
 	return e.Err
 }
 
-func SendBatch(conn net.Conn, batch Batch, agencyID string) (Response, error) {
-	var builder strings.Builder
-	builder.WriteString(fmt.Sprintf("%s;%d\n", agencyID, len(batch.bets)))
-
-	for _, bet := range batch.bets {
-		builder.WriteString(bet.SerializeBet())
+func Send(conn net.Conn, payload []byte) (Response, error) {
+	if len(payload) == 0 {
+		return Response{}, ProtocolError{Message: "cannot send an empty payload"}
 	}
 
-	payloadBytes := []byte(builder.String())
-	headerBytes := []byte(fmt.Sprintf("%0*d", HeaderSize, len(payloadBytes)))
+	headerBytes := []byte(fmt.Sprintf("%0*d", HeaderSize, len(payload)))
+	fullMessage := append(headerBytes, payload...)
 
 	if err := conn.SetWriteDeadline(time.Now().Add(WriteTimeout)); err != nil {
 		return Response{}, fmt.Errorf("failed to set write timeout: %w", err)
 	}
 
-	fullMessage := append(headerBytes, payloadBytes...)
 	_, err := conn.Write(fullMessage)
 	if err != nil {
-		return Response{}, ProtocolError{Message: "failed to send batch message", Err: err}
+		return Response{}, ProtocolError{Message: "failed to send message", Err: err}
 	}
 
 	if err := conn.SetReadDeadline(time.Now().Add(ReadTimeout)); err != nil {

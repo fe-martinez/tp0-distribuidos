@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/op/go-logging"
@@ -26,13 +27,11 @@ type Client struct {
 	file    *os.File
 	scanner *bufio.Scanner
 	conn    net.Conn
-	reader  *bufio.Reader
 }
 
 func NewClient(config ClientConfig) (*Client, error) {
-	filepath := fmt.Sprintf("/.data/agency-%v.csv", config.ID)
+	filepath := fmt.Sprintf("/.data/agency-%s.csv", config.ID)
 	file, err := os.Open(filepath)
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to open data file: %w", err)
 	}
@@ -49,7 +48,6 @@ func (c *Client) Connect() error {
 		return fmt.Errorf("could not connect to server: %w", err)
 	}
 	c.conn = conn
-	c.reader = bufio.NewReader(conn)
 	log.Infof("Client %s connected to %s", c.config.ID, c.config.ServerAddress)
 	return nil
 }
@@ -74,36 +72,51 @@ func (c *Client) StartClientLoop() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	var overflowBet *Bet = nil
+	batch := NewBatch(c.config.MaxBatchSize, c.config.MaxBatchBets)
 
-	for {
+	for c.scanner.Scan() {
 		if ctx.Err() != nil {
 			log.Infof("Client %s stopped due to shutdown signal.", c.config.ID)
 			return
 		}
 
-		batchResult, err := CreateBatch(c.scanner, c.config.MaxBatchSize, c.config.MaxBatchBets, overflowBet)
-		if err != nil {
-			log.Errorf("Failed to create batch: %v", err)
-			return
+		line := c.scanner.Text()
+		fields := strings.Split(line, ",")
+		if len(fields) != 5 {
+			log.Warningf("Skipping malformed line: %s", line)
+			continue
 		}
+		bet := Bet{fields[0], fields[1], fields[2], fields[3], fields[4]}
 
-		overflowBet = batchResult.OverflowBet
+		if !batch.Add(bet) {
+			c.sendBatch(batch)
 
-		if len(batchResult.Batch.bets) > 0 {
-			response, err := SendBatch(c.conn, batchResult.Batch, c.config.ID)
-			if err != nil {
-				log.Errorf("Failed to send batch: %v", err)
-				return
-			}
-			log.Debugf("action: send_batch | result: success | client_id: %s | server_status: %s | bets_sent: %d", c.config.ID, response.Status, len(batchResult.Batch.bets))
-		}
-
-		if len(batchResult.Batch.bets) == 0 && overflowBet == nil {
-			log.Infof("End of file reached. Client finished processing.")
-			break
+			batch = NewBatch(c.config.MaxBatchSize, c.config.MaxBatchBets)
+			batch.Add(bet)
 		}
 	}
 
+	if batch.BetCount() > 0 {
+		c.sendBatch(batch)
+	}
+
+	if err := c.scanner.Err(); err != nil {
+		log.Errorf("Error reading from file: %v", err)
+	}
+
 	log.Infof("Client %s finished sending all bets.", c.config.ID)
+}
+
+func (c *Client) sendBatch(batch *Batch) {
+	payload := batch.Serialize(c.config.ID)
+	if payload == nil {
+		return
+	}
+
+	response, err := Send(c.conn, payload)
+	if err != nil {
+		log.Errorf("Failed to send batch: %v", err)
+		return
+	}
+	log.Infof("action: send_batch | result: success | client_id: %s | server_status: %s | bets_sent: %d", c.config.ID, response.Status, batch.BetCount())
 }
