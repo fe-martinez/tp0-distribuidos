@@ -1,4 +1,4 @@
-# Protocolo de comunicación
+# Ejercicio 7: Protocolo de comunicación
 
 Todos los mensajes mantienen el encapsulamiento [header de 8 bytes + body]
 
