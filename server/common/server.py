@@ -4,6 +4,7 @@ import signal
 import sys
 from .protocol import Protocol, ProtocolError
 from .bet_handler import BetHandler
+from .batch import Batch
 
 class Server:
     def __init__(self, port, listen_backlog):
@@ -25,17 +26,21 @@ class Server:
         
         try:
             while True:
-                batch_data = Protocol.receive_batch(client_sock)
-                if not batch_data:
+                payload_bytes = Protocol.receive(client_sock)
+                if not payload_bytes:
                     logging.info(f'action: client_connection | result: success | ip: {addr[0]} | status: client finished sending')
                     break
+
+                batch = Batch.from_payload(payload_bytes, Protocol.encoding, Protocol.separator)
+                result = self._handler.process_batch(batch)
                 
-                result = self._handler.process_batch(batch_data)
                 if result["status"] == "success":
-                    logging.info(f'action: apuesta_recibida | result: success | cantidad: {len(batch_data)}')
+                    logging.info(f'action: apuesta_recibida | result: success | cantidad: {len(batch.bets)}')
                 else:
-                    logging.error(f'action: apuesta_recibida | result: fail | cantidad: {len(batch_data)}')
-                Protocol.send_response(client_sock, result)
+                    logging.error(f'action: apuesta_recibida | result: fail | cantidad: {len(batch.bets)}')
+
+                response_str = f"{result['status']};{result['message']}"
+                Protocol.send(client_sock, response_str.encode(Protocol.encoding))
         
         except ConnectionAbortedError:
             logging.info(f'action: client_connection | result: success | ip: {addr[0]} | status: client disconnected')
