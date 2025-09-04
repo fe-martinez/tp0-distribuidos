@@ -41,17 +41,20 @@ class Server:
                 else:
                     logging.info("action: listener_shutdown | result: success")
                 break
-        
-        logging.info("All clients connected. Waiting for threads to finish.")
+
+        logging.info("action: waiting for client processing | result: success")
         with self._clients_lock:
-            for t in self._active_clients:
-                t.join()
+            threads = list(self._active_clients)
+
+        for t in threads:
+            t.join()
 
         logging.info("action: server_shutdown | result: success")
 
     def _handle_client_connection(self, client_sock, addr):
         logging.info(f"action: client_connection | result: success | ip: {addr[0]}")
         client_agency = None
+        client_sock.settimeout(10.0)
 
         with client_sock:
             try:
@@ -82,20 +85,18 @@ class Server:
                     Protocol.send(client_sock, response_str.encode(Protocol.encoding))
 
                 logging.info(f"action: client_waiting_for_draw | result: success | ip: {addr[0]} | agency: {client_agency}")
-                self._draw_barrier.wait()
+                self._draw_barrier.wait(30.0)
                 
-                agency_key = int(client_agency)
+                agency_key = int(client_agency) if client_agency is not None else 0
                 winners_docs = self._winners.get(agency_key, [])
                 winners_payload_str = "NO_WINNERS" if not winners_docs else Protocol.field_separator.join(winners_docs)
-                Protocol.send(client_sock, winners_payload_str.encode(Protocol.encoding))
-                
                 Protocol.send(client_sock, winners_payload_str.encode(Protocol.encoding))
                 logging.info(f"action: sent_winners | result: success | ip: {addr[0]} | agency: {client_agency}")
 
             except (ValueError, ProtocolError, ConnectionAbortedError) as e:
                 logging.error(f"action: client_handling | result: fail | ip: {addr[0]} | error: {e}")
             except threading.BrokenBarrierError:
-                logging.info(f"action: barrier_broken | result: interrupted | ip: {addr[0]}")
+                logging.info(f"action: barrier_broken | result: fail | ip: {addr[0]}")
             except OSError as e:
                 logging.error(f"action: socket_error | result: fail | ip: {addr[0]} | error: {e}")
 
@@ -109,7 +110,7 @@ class Server:
         signal.signal(signal.SIGINT, self.__shutdown)
         signal.signal(signal.SIGTERM, self.__shutdown)
 
-    def __shutdown(self, sig):
+    def __shutdown(self, sig, frame):
         logging.info(f"action: shutdown | result: in_progress | signal: {sig}")
         self._running = False
         try:
