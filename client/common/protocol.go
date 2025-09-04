@@ -37,116 +37,68 @@ func (e ProtocolError) Unwrap() error {
 	return e.Err
 }
 
-func SendBatch(conn net.Conn, batch Batch, agencyID string) (Response, error) {
-	var builder strings.Builder
-	builder.WriteString(fmt.Sprintf("%s;%d\n", agencyID, len(batch.bets)))
-
-	for _, bet := range batch.bets {
-		builder.WriteString(bet.SerializeBet())
+func writeAll(conn net.Conn, buf []byte) error {
+	totalWritten := 0
+	for totalWritten < len(buf) {
+		n, err := conn.Write(buf[totalWritten:])
+		if err != nil {
+			return err
+		}
+		totalWritten += n
 	}
-
-	payloadBytes := []byte(builder.String())
-	headerBytes := []byte(fmt.Sprintf("%0*d", HeaderSize, len(payloadBytes)))
-
-	if err := conn.SetWriteDeadline(time.Now().Add(WriteTimeout)); err != nil {
-		return Response{}, fmt.Errorf("failed to set write timeout: %w", err)
-	}
-
-	fullMessage := append(headerBytes, payloadBytes...)
-	if _, err := conn.Write(fullMessage); err != nil {
-		return Response{}, ProtocolError{Message: "failed to send batch message", Err: err}
-	}
-
-	return readStandardResponse(conn)
+	return nil
 }
 
-func SendEndSignal(conn net.Conn) error {
-	endMessage := fmt.Sprintf("%-*s", HeaderSize, "END")
+func Send(conn net.Conn, payload []byte) error {
+	headerBytes := []byte(fmt.Sprintf("%0*d", HeaderSize, len(payload)))
+	fullMessage := append(headerBytes, payload...)
 
 	if err := conn.SetWriteDeadline(time.Now().Add(WriteTimeout)); err != nil {
 		return fmt.Errorf("failed to set write timeout: %w", err)
 	}
 
-	if _, err := conn.Write([]byte(endMessage)); err != nil {
-		return ProtocolError{Message: "failed to send END message", Err: err}
+	if err := writeAll(conn, fullMessage); err != nil {
+		return ProtocolError{Message: "failed to send message", Err: err}
 	}
 	return nil
 }
 
-func ReceiveWinners(conn net.Conn) ([]string, error) {
-	longReadTimeout := 30 * time.Second
+func Receive(conn net.Conn, timeout time.Duration) ([]byte, error) {
+	if err := conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
+		return nil, fmt.Errorf("failed to set read timeout: %w", err)
+	}
 
-	response, err := readWinnerResponse(conn, longReadTimeout)
+	headerBuf := make([]byte, HeaderSize)
+	if _, err := io.ReadFull(conn, headerBuf); err != nil {
+		return nil, ProtocolError{Message: "failed to read response header", Err: err}
+	}
+
+	payloadLen, err := strconv.Atoi(string(headerBuf))
 	if err != nil {
-		return nil, err
+		return nil, ProtocolError{Message: "invalid response length in header", Err: err}
 	}
 
-	if response == "NO_WINNERS" {
-		return []string{}, nil
+	if payloadLen == 0 {
+		return nil, nil
 	}
 
-	winners := strings.Split(response, ";")
-	return winners, nil
+	payloadBuf := make([]byte, payloadLen)
+	if _, err := io.ReadFull(conn, payloadBuf); err != nil {
+		return nil, ProtocolError{Message: "failed to read response payload", Err: err}
+	}
+	return payloadBuf, nil
 }
 
-func readStandardResponse(conn net.Conn) (Response, error) {
-	if err := conn.SetReadDeadline(time.Now().Add(ReadTimeout)); err != nil {
-		return Response{}, fmt.Errorf("failed to set read timeout: %w", err)
+func ParseResponse(payload []byte) Response {
+	if payload == nil {
+		return Response{}
 	}
-
-	respHeaderBuf := make([]byte, HeaderSize)
-	if _, err := io.ReadFull(conn, respHeaderBuf); err != nil {
-		return Response{}, ProtocolError{Message: "failed to read response header", Err: err}
-	}
-
-	respLen, err := strconv.Atoi(string(respHeaderBuf))
-	if err != nil {
-		return Response{}, ProtocolError{Message: "invalid response length in header", Err: err}
-	}
-
-	if respLen == 0 {
-		return Response{}, nil
-	}
-
-	respPayloadBuf := make([]byte, respLen)
-	if _, err := io.ReadFull(conn, respPayloadBuf); err != nil {
-		return Response{}, ProtocolError{Message: "failed to read response payload", Err: err}
-	}
-
-	parts := strings.Split(strings.TrimSpace(string(respPayloadBuf)), ";")
+	parts := strings.Split(strings.TrimSpace(string(payload)), ";")
 	if len(parts) < 2 {
-		return Response{Status: strings.TrimSpace(parts[0])}, nil
+		return Response{Status: strings.TrimSpace(parts[0])}
 	}
-
 	return Response{
 		Status:  strings.TrimSpace(parts[0]),
 		Message: strings.TrimSpace(parts[1]),
-	}, nil
-}
-
-func readWinnerResponse(conn net.Conn, timeout time.Duration) (string, error) {
-	if err := conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
-		return "", fmt.Errorf("failed to set read timeout: %w", err)
 	}
-
-	respHeaderBuf := make([]byte, HeaderSize)
-	if _, err := io.ReadFull(conn, respHeaderBuf); err != nil {
-		return "", ProtocolError{Message: "failed to read winner response header", Err: err}
-	}
-
-	respLen, err := strconv.Atoi(string(respHeaderBuf))
-	if err != nil {
-		return "", ProtocolError{Message: "invalid winner response length", Err: err}
-	}
-
-	if respLen == 0 {
-		return "", nil
-	}
-
-	respPayloadBuf := make([]byte, respLen)
-	if _, err := io.ReadFull(conn, respPayloadBuf); err != nil {
-		return "", ProtocolError{Message: "failed to read winner response payload", Err: err}
-	}
-
-	return strings.TrimSpace(string(respPayloadBuf)), nil
 }
