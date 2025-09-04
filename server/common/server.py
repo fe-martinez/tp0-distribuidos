@@ -41,13 +41,15 @@ class Server:
 
                 response_str = f"{result['status']};{result['message']}"
                 Protocol.send(client_sock, response_str.encode(Protocol.encoding))
-        
+        except ValueError as e:
+            num_bets_estimate = len(payload_bytes.decode(Protocol.encoding, errors='ignore').split('\n'))
+            logging.error(f'action: apuesta_recibida | result: fail | cantidad: {num_bets_estimate}')
+            response_str = f"error;Invalid batch data: {e}"
+            Protocol.send(client_sock, response_str.encode(Protocol.encoding))
         except ConnectionAbortedError:
             logging.info(f'action: client_connection | result: success | ip: {addr[0]} | status: client disconnected')
-        except ProtocolError as e:
+        except (ProtocolError, OSError) as e:
             logging.error(f'action: client_handling | result: fail | ip: {addr[0]} | error: protocol_error | details: {e}')
-        except (OSError, ValueError) as e:
-            logging.error(f'action: client_handling | result: fail | ip: {addr[0]} | error: {e}')
         finally:
             logging.info(f'action: client_disconnect | result: success | ip: {addr[0]}')
             if client_sock in self._active_connections:

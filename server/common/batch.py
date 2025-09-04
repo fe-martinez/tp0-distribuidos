@@ -1,5 +1,3 @@
-# FILE: common/batch.py
-
 from .utils import Bet
 
 class Batch:
@@ -23,19 +21,19 @@ class Batch:
             raise ValueError(f"Invalid batch header format: got '{lines[0]}'")
         
         agency_id, num_bets_str = [part.strip() for part in header_parts]
-
         bet_lines = lines[1:]
+
         if len(bet_lines) != int(num_bets_str):
             raise ValueError(f"Batch size mismatch: header indicates {num_bets_str}, but received {len(bet_lines)}.")
 
-        parsed_bets = []
-        for line in bet_lines:
-            fields = line.strip().split(separator)
-            if len(fields) != 5:
-                raise ValueError(f"Invalid bet format in line: '{line}'")
-            
-            parsed_bets.append(
-                Bet(
+        try:
+            parsed_bets = []
+            for line in bet_lines:
+                fields = line.strip().split(separator)
+                if len(fields) != 5:
+                    raise ValueError(f"Invalid bet format: expected 5 fields in line '{line}'")
+                
+                validated_bet = Bet(
                     agency=agency_id,
                     first_name=fields[0],
                     last_name=fields[1],
@@ -43,6 +41,9 @@ class Batch:
                     birthdate=fields[3],
                     number=fields[4]
                 )
-            )
+                parsed_bets.append(validated_bet)
+        
+        except (ValueError, TypeError) as e:
+            raise ValueError(f"Invalid data in bet line: {e}")
         
         return cls(agency_id, parsed_bets)

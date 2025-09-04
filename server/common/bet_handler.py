@@ -14,4 +14,4 @@ class BetHandler:
         
         except Exception as e:
             logging.error(f"action: process_batch | result: fail | error: {e}")
-            return {"status": "error", "message": f"An unexpected error occurred: {e}"}
+            return {"status": "error", "message": f"An unexpected error occurred during storage: {e}"}
