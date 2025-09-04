@@ -1,9 +1,9 @@
 package common
 
 import (
+	"context"
 	"errors"
 	"net"
-	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -44,25 +44,29 @@ func (c *Client) Close() {
 	}
 }
 
+func (c *Client) handleShutdown(ctx context.Context) {
+	<-ctx.Done()
+	log.Infof("action: shutdown_signal_received | result: success | client_id: %s", c.config.ID)
+	c.Close()
+}
+
 func (c *Client) StartClientLoop() {
+	defer c.Close()
 	log.Infof("action: start_client | result: success | client_id: %v | server_address: %v", c.config.ID, c.config.ServerAddress)
 	if err := c.Connect(); err != nil {
 		log.Errorf("action: connect | result: fail | client_id: %v | server_address: %v | error: %v", c.config.ID, c.config.ServerAddress, err)
 		return
 	}
-	defer c.Close()
 	log.Infof("action: connect | result: success | client_id: %v | server_address: %v", c.config.ID, c.config.ServerAddress)
 
-	shutdownChan := make(chan os.Signal, 1)
-	signal.Notify(shutdownChan, syscall.SIGINT, syscall.SIGTERM)
-	defer signal.Stop(shutdownChan)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	go c.handleShutdown(ctx)
 
 	for msgID := 1; msgID <= c.config.LoopAmount; msgID++ {
-		select {
-		case <-shutdownChan:
-			log.Infof("action: stop_client | result: success | client_id: %v", c.config.ID)
-			return
-		default:
+		if ctx.Err() != nil {
+			break
 		}
 
 		bet, err := loadBetFromEnv()
@@ -75,6 +79,11 @@ func (c *Client) StartClientLoop() {
 
 		response, err := Send(c.conn, payload)
 		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				log.Infof("action: client_stopped_during_send | result: success | client_id: %v", c.config.ID)
+				break
+			}
+
 			var protocolErr ProtocolError
 			if errors.As(err, &protocolErr) {
 				log.Errorf("action: send_bet | result: fail | client_id: %v | error_type: protocol_error | details: %v", c.config.ID, protocolErr.Message)
@@ -95,5 +104,9 @@ func (c *Client) StartClientLoop() {
 		time.Sleep(c.config.LoopPeriod)
 	}
 
-	log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
+	if ctx.Err() != nil {
+		log.Infof("action: stop_client | result: success | client_id: %v", c.config.ID)
+	} else {
+		log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
+	}
 }
