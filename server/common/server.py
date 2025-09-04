@@ -2,13 +2,11 @@ import socket
 import logging
 import signal
 import threading
-
 from .protocol import Protocol, ProtocolError
 from .bet_handler import BetHandler
+from .batch import Batch
 
 class Server:
-    """A concurrent TCP server using a Listener/Worker threading model."""
-
     def __init__(self, port, listen_backlog, client_count):
         self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_socket.bind(('', port))
@@ -18,7 +16,6 @@ class Server:
         self._client_count = client_count
         self._active_clients = []
         self._clients_lock = threading.Lock()
-
         self._draw_barrier = threading.Barrier(self._client_count)
         self.__setup_signal_handlers()
 
@@ -27,18 +24,13 @@ class Server:
         logging.info(f"action: server_start | result: success | expected_clients: {self._client_count}")
         self._server_socket.settimeout(1.0)
 
-        while self._running:
+        while self._running and len(self._active_clients) < self._client_count:
             try:
                 client_sock, addr = self._server_socket.accept()
-
-                worker_thread = threading.Thread(
-                    target=self._handle_client_connection,
-                    args=(client_sock, addr)
-                )
+                worker_thread = threading.Thread(target=self._handle_client_connection, args=(client_sock, addr))
                 with self._clients_lock:
-                    self._active_clients.append((worker_thread, client_sock))
+                    self._active_clients.append(worker_thread)
                 worker_thread.start()
-
             except socket.timeout:
                 continue
             except OSError as e:
@@ -47,54 +39,61 @@ class Server:
                 else:
                     logging.info("action: listener_shutdown | result: success")
                 break
-            finally:
-                with self._clients_lock:
-                    for t, s in list(self._active_clients):
-                        if not t.is_alive():
-                            try:
-                                s.close()
-                                t.join(timeout=1.0)
-                            except Exception as e:
-                                logging.error(f"action: client_cleanup | result: fail | error: {e}")
-                            self._active_clients.remove((t, s))
+        
+        logging.info("All clients connected. Waiting for threads to finish.")
+        with self._clients_lock:
+            for t in self._active_clients:
+                t.join()
 
-        self.__shutdown(0)
         logging.info("action: server_shutdown | result: success")
 
     def _handle_client_connection(self, client_sock, addr):
-        client_agency = None
         logging.info(f"action: client_connection | result: success | ip: {addr[0]}")
+        client_agency = None
 
         with client_sock:
             try:
                 while True:
-                    batch_data = Protocol.receive_batch(client_sock)
-                    if not batch_data:
+                    payload_bytes = Protocol.receive(client_sock)
+                    if payload_bytes == b'END':
                         logging.info(f"action: client_connection | result: success | ip: {addr[0]} | status: finished_sending_bets")
                         break
 
+                    try:
+                        batch = Batch.from_payload(payload_bytes, Protocol.encoding, Protocol.field_separator)
+                    except ValueError as e:
+                        logging.error(f"action: client_handling | result: fail | ip: {addr[0]} | error: invalid_batch | details: {e}")
+                        error_response_str = f"error{Protocol.field_separator}Invalid batch format: {e}"
+                        Protocol.send(client_sock, error_response_str.encode(Protocol.encoding))
+                        continue
+
                     if client_agency is None:
-                        client_agency = batch_data[0].get('agency', None)
+                        client_agency = batch.agency_id
 
-                    result = self._handler.process_batch(batch_data)
+                    result = self._handler.process_batch(batch)
+
+                    
                     log_level = logging.INFO if result["status"] == "success" else logging.ERROR
-                    logging.log(log_level, f"action: apuesta_recibida | result: {result['status']} | cantidad: {len(batch_data)}")
-                    Protocol.send_response(client_sock, result)
+                    logging.log(log_level, f"action: apuesta_recibida | result: {result['status']} | cantidad: {len(batch.bets)}")
+                    
+                    response_str = f"{result['status']}{Protocol.field_separator}{result['message']}"
+                    Protocol.send(client_sock, response_str.encode(Protocol.encoding))
 
-                logging.info(f"action: client_waiting | result: success | ip: {addr[0]} | agency: {client_agency}")
-
+                logging.info(f"action: client_waiting_for_draw | result: success | ip: {addr[0]} | agency: {client_agency}")
                 self._draw_barrier.wait()
-                winners = self._handler.get_winners_by_agency(int(client_agency)) if client_agency else []
-
-                Protocol.send_winners(client_sock, winners or [])
+                
+                winners = self._handler.get_winners_by_agency(client_agency or "0")
+                winners_payload_str = "NO_WINNERS" if not winners else Protocol.field_separator.join(winners)
+                
+                Protocol.send(client_sock, winners_payload_str.encode(Protocol.encoding))
                 logging.info(f"action: sent_winners | result: success | ip: {addr[0]} | agency: {client_agency}")
 
-            except ConnectionAbortedError as e:
-                logging.error(f"action: client_close | result: success | ip: {addr[0]} | error: {e}")
-            except threading.BrokenBarrierError as e:
-                logging.info(f"action: barrier_broken | result: interrupted | ip: {addr[0]} | error: {e}")
-            except (ProtocolError, OSError) as e:
+            except (ValueError, ProtocolError, ConnectionAbortedError) as e:
                 logging.error(f"action: client_handling | result: fail | ip: {addr[0]} | error: {e}")
+            except threading.BrokenBarrierError:
+                logging.info(f"action: barrier_broken | result: interrupted | ip: {addr[0]}")
+            except OSError as e:
+                logging.error(f"action: socket_error | result: fail | ip: {addr[0]} | error: {e}")
 
         logging.info(f"action: client_disconnect | result: success | ip: {addr[0]}")
 
@@ -102,27 +101,23 @@ class Server:
         signal.signal(signal.SIGINT, self.__shutdown)
         signal.signal(signal.SIGTERM, self.__shutdown)
 
-    def __shutdown(self, sig, frame=None):
+    def __shutdown(self, sig):
         logging.info(f"action: shutdown | result: in_progress | signal: {sig}")
         self._running = False
-
-        try:
-            self._server_socket.close()
-        except Exception as e:
-            logging.error(f"action: socket_close | result: fail | error: {e}")
-
         try:
             self._draw_barrier.abort()
         except Exception:
             pass
 
+        try:
+            self._server_socket.close()
+        except Exception as e:
+            logging.error(f"action: server_socket_close | result: fail | error: {e}")
+        
+        logging.info("action: shutdown | result: in_progress | message: joining active client threads")
         with self._clients_lock:
-            for t, s in self._active_clients:
-                try:
-                    s.close()
+            for t in self._active_clients:
+                if t.is_alive():
                     t.join(timeout=1.0)
-                except Exception as e:
-                    logging.error(f"action: client_join | result: fail | error: {e}")
-            self._active_clients.clear()
 
         logging.info("action: shutdown | result: success")
