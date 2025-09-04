@@ -142,7 +142,10 @@ func (c *Client) receiveAndLogWinners() {
 
 	var winners []string
 	if len(winnersPayload) > 0 {
-		winners = strings.Split(string(winnersPayload), ";")
+		winnersStr := string(winnersPayload)
+		if winnersStr != "NO_WINNERS" {
+			winners = strings.Split(winnersStr, ";")
+		}
 	}
 
 	log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %d", len(winners))
