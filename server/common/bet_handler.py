@@ -1,15 +1,37 @@
 import logging
-from common.utils import Bet, store_bets
+from .utils import Bet, store_bets
 
 class BetHandler:
-    def process_bet(self, bet_data: dict):
+    def _parse_bet_line(self, line: str) -> dict:
+        text = line.strip()
+        if not text:
+            raise Exception("Empty bet line")
+
+        fields = [f.strip() for f in text.split(';')]
+        if len(fields) != 6:
+            raise Exception(f"Invalid message format: expected 6 fields, got {len(fields)}")
+
+        try:
+            int(fields[5])
+        except ValueError:
+            raise Exception(f"Invalid number field: '{fields[5]}' is not a valid integer")
+
+        return {
+            "agency":    fields[0],
+            "firstName": fields[1],
+            "lastName":  fields[2],
+            "document":  fields[3],
+            "birthdate": fields[4],
+            "number":    fields[5],
+        }
+
+
+    def process_bet(self, raw_bet_data: str) -> dict:
         try:
             logging.info(f"action: process_bet | result: in_progress")
             
-            required_keys = ['firstName', 'lastName', 'document', 'birthdate', 'agency', 'number']
-            if not all(key in bet_data for key in required_keys):
-                raise ValueError("Missing required fields after protocol parsing.")
-
+            bet_data = self._parse_bet_line(raw_bet_data)
+            
             bet = Bet(
                 first_name=bet_data['firstName'],
                 last_name=bet_data['lastName'],
@@ -21,8 +43,8 @@ class BetHandler:
             
             store_bets([bet])
             logging.info(f'action: apuesta_almacenada | result: success | dni: {bet.document} | numero: {bet.number}')
-            response = {"status": "success", "message": "Bet stored successfully."}
-            return response
+            
+            return {"status": "success", "message": "Bet stored successfully."}
 
         except (ValueError, TypeError) as e:
             logging.error(f"action: process_bet | result: fail | error: {e}")

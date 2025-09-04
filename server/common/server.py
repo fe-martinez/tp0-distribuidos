@@ -26,17 +26,16 @@ class Server:
         logging.info(f'action: client_connection | result: success | ip: {addr[0]}')
         try:
             request_data = Protocol.receive_message(client_sock)
-            bet = Protocol.parse_bet_line(request_data)
             logging.info(f'action: receive_message | result: success | ip: {addr[0]}')
 
-            result = self._handler.process_bet(bet)
+            response_str = self._handler.process_bet(request_data)
 
-            Protocol.send_response(client_sock, result)
+            Protocol.send_response(client_sock, response_str)
             logging.info(f'action: send_response | result: success | ip: {addr[0]}')
-        except ProtocolError as e:
-            logging.error(f'action: client_handling | result: fail | ip: {addr[0]} | error: protocol_error | details: {e}')
         except (OSError, ValueError, ConnectionAbortedError) as e:
             logging.error(f'action: client_handling | result: fail | ip: {addr[0]} | error: {e}')
+        except (ProtocolError, Exception) as e:
+            logging.error(f'action: client_handling | result: fail | ip: {addr[0]} | error: protocol_error | details: {e}')
         finally:
             logging.info(f'action: client_disconnect | result: success | ip: {addr[0]}')
             if client_sock in self._active_connections:
@@ -50,12 +49,12 @@ class Server:
         return c
 
     def __setup_signal_handlers(self):
-        signal.signal(signal.SIGINT, self.__signal_handler)
-        signal.signal(signal.SIGTERM, self.__signal_handler)
+        signal.signal(signal.SIGINT, self.__shutdown)
+        signal.signal(signal.SIGTERM, self.__shutdown)
 
-    def __signal_handler(self, sig, frame):
+    def __shutdown(self, sig, frame):
         logging.info(f'action: shutdown | result: in_progress | signal: {sig}')
-        for client_sock in self._active_connections[:]:
+        for client_sock in self._active_connections:
             try:
                 client_sock.close()
             except OSError as e:
