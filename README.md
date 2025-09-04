@@ -1,3 +1,7 @@
+# Importante
+
+**Se deja el enunciado a forma de referencia, en cada rama se fue construyendo el readme con cada iteración sobre el repo. En la rama del ej8 estan todos los ejercicios descriptos.**
+
 # TP0: Docker + Comunicaciones + Concurrencia
 
 En el presente repositorio se provee un esqueleto básico de cliente/servidor, en donde todas las dependencias del mismo se encuentran encapsuladas en containers. Los alumnos deberán resolver una guía de ejercicios incrementales, teniendo en cuenta las condiciones de entrega descritas al final de este enunciado.
