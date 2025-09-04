@@ -34,7 +34,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 	filepath := fmt.Sprintf("/.data/agency-%v.csv", config.ID)
 	file, err := os.Open(filepath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open data file %s: %w", filepath, err)
+		return nil, fmt.Errorf("failed to open data file: %w", err)
 	}
 	return &Client{
 		config:  config,
@@ -46,30 +46,29 @@ func NewClient(config ClientConfig) (*Client, error) {
 func (c *Client) Connect() error {
 	conn, err := net.DialTimeout("tcp", c.config.ServerAddress, ConnectionTimeout)
 	if err != nil {
-		return fmt.Errorf("could not connect to server: %w", err)
+		return fmt.Errorf("actions: connect | result: fail | client_id: %s | server_address: %s | error: %v", c.config.ID, c.config.ServerAddress, err)
 	}
 	c.conn = conn
-	log.Infof("action: connect | result: success | client_id: %s | server_address: %s",
-		c.config.ID, c.config.ServerAddress)
+	log.Infof("action: connect | result: success | client_id: %s | server_address: %s", c.config.ID, c.config.ServerAddress)
 	return nil
 }
 
 func (c *Client) Close() {
 	if c.file != nil {
-		_ = c.file.Close()
+		c.file.Close()
 	}
 	if c.conn != nil {
-		_ = c.conn.Close()
+		c.conn.Close()
 	}
-	log.Infof("action: close_client | result: success | client_id: %s", c.config.ID)
+	log.Infof("action: close_connection | result: success | client_id: %s", c.config.ID)
 }
 
 func (c *Client) StartClientLoop() {
-	defer c.Close()
 	if err := c.Connect(); err != nil {
-		log.Errorf("action: connect | result: fail | client_id: %s | error: %v", c.config.ID, err)
+		log.Errorf("actions: start_client_loop | result: fail | client_id: %s | error: %v", c.config.ID, err)
 		return
 	}
+	defer c.Close()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -83,7 +82,8 @@ func (c *Client) StartClientLoop() {
 			return
 		}
 
-		fields := strings.Split(c.scanner.Text(), ",")
+		line := c.scanner.Text()
+		fields := strings.Split(line, ",")
 		if len(fields) != 5 {
 			continue
 		}
@@ -113,18 +113,19 @@ func (c *Client) sendBatch(batch *Batch) {
 		return
 	}
 
-	ackPayload, err := Receive(c.conn, ReadTimeout)
+	responsePayload, err := Receive(c.conn, ReadTimeout)
 	if err != nil {
-		log.Errorf("action: receive_batch_ack | result: fail | client_id: %s | error: %v", c.config.ID, err)
+		log.Errorf("action: receive_ack | result: fail | client_id: %s | error: %v", c.config.ID, err)
 		return
 	}
-	response := ParseResponse(ackPayload)
-	log.Debugf("action: send_batch | result: success | client_id: %s | server_status: %s | bets_sent: %d",
-		c.config.ID, response.Status, batch.BetCount())
+	response := ParseResponse(responsePayload)
+	log.Debugf("action: send_batch | result: success | server_status: %s | bets_sent: %d", response.Status, batch.BetCount())
 }
 
 func (c *Client) sendEndSignal() {
-	if err := Send(c.conn, []byte{}); err != nil {
+	endMessage := []byte(fmt.Sprintf("%-*s", HeaderSize, "END"))
+
+	if err := writeAll(c.conn, endMessage); err != nil {
 		log.Errorf("action: send_end_signal | result: fail | client_id: %s | error: %v", c.config.ID, err)
 		return
 	}
@@ -132,18 +133,19 @@ func (c *Client) sendEndSignal() {
 }
 
 func (c *Client) receiveAndLogWinners() {
-	const longReadTimeout = 30 * time.Second
+	longReadTimeout := 30 * time.Second
 	winnersPayload, err := Receive(c.conn, longReadTimeout)
 	if err != nil {
 		log.Errorf("action: consulta_ganadores | result: fail | client_id: %s | error: %v", c.config.ID, err)
 		return
 	}
 
-	winnersStr := string(winnersPayload)
 	var winners []string
-
-	if len(winnersPayload) > 0 && winnersStr != "NO_WINNERS" {
-		winners = strings.Split(winnersStr, ";")
+	if len(winnersPayload) > 0 {
+		winnersStr := string(winnersPayload)
+		if winnersStr != "NO_WINNERS" {
+			winners = strings.Split(winnersStr, ";")
+		}
 	}
 
 	log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %d", len(winners))

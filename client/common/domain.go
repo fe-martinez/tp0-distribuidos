@@ -42,7 +42,7 @@ func NewBatch(maxSize int, maxBets int) *Batch {
 
 func (b *Batch) Add(bet Bet) bool {
 	betSize := bet.GetBytesSize()
-	if (!b.IsEmpty() && b.currentSize+betSize > b.maxSize) || (!b.IsEmpty() && b.currentBets+1 > b.maxBets) {
+	if (b.currentSize+betSize > b.maxSize && !b.IsEmpty()) || (b.currentBets+1 > b.maxBets && !b.IsEmpty()) {
 		return false
 	}
 	b.bets = append(b.bets, bet)

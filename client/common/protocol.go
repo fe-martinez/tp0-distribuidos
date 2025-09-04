@@ -50,13 +50,12 @@ func writeAll(conn net.Conn, buf []byte) error {
 }
 
 func Send(conn net.Conn, payload []byte) error {
-	header := fmt.Sprintf("%0*d", HeaderSize, len(payload))
-	fullMessage := append([]byte(header), payload...)
+	headerBytes := []byte(fmt.Sprintf("%0*d", HeaderSize, len(payload)))
+	fullMessage := append(headerBytes, payload...)
 
 	if err := conn.SetWriteDeadline(time.Now().Add(WriteTimeout)); err != nil {
-		return fmt.Errorf("failed to set write deadline: %w", err)
+		return fmt.Errorf("failed to set write timeout: %w", err)
 	}
-	defer conn.SetWriteDeadline(time.Time{})
 
 	if err := writeAll(conn, fullMessage); err != nil {
 		return ProtocolError{Message: "failed to send message", Err: err}
@@ -66,22 +65,21 @@ func Send(conn net.Conn, payload []byte) error {
 
 func Receive(conn net.Conn, timeout time.Duration) ([]byte, error) {
 	if err := conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
-		return nil, fmt.Errorf("failed to set read deadline: %w", err)
+		return nil, fmt.Errorf("failed to set read timeout: %w", err)
 	}
-	defer conn.SetReadDeadline(time.Time{})
 
 	headerBuf := make([]byte, HeaderSize)
 	if _, err := io.ReadFull(conn, headerBuf); err != nil {
 		return nil, ProtocolError{Message: "failed to read response header", Err: err}
 	}
 
-	payloadLen, err := strconv.Atoi(strings.TrimSpace(string(headerBuf)))
+	payloadLen, err := strconv.Atoi(string(headerBuf))
 	if err != nil {
-		return nil, ProtocolError{Message: "invalid response header length", Err: err}
+		return nil, ProtocolError{Message: "invalid response length in header", Err: err}
 	}
 
 	if payloadLen == 0 {
-		return []byte{}, nil
+		return nil, nil
 	}
 
 	payloadBuf := make([]byte, payloadLen)
@@ -96,8 +94,11 @@ func ParseResponse(payload []byte) Response {
 		return Response{}
 	}
 	parts := strings.Split(strings.TrimSpace(string(payload)), ";")
-	if len(parts) == 1 {
-		return Response{Status: parts[0]}
+	if len(parts) < 2 {
+		return Response{Status: strings.TrimSpace(parts[0])}
 	}
-	return Response{Status: parts[0], Message: parts[1]}
+	return Response{
+		Status:  strings.TrimSpace(parts[0]),
+		Message: strings.TrimSpace(parts[1]),
+	}
 }
