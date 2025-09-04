@@ -2,6 +2,7 @@ package common
 
 import (
 	"errors"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -21,14 +22,36 @@ type ClientConfig struct {
 
 type Client struct {
 	config ClientConfig
+	conn   net.Conn
 }
 
 func NewClient(config ClientConfig) *Client {
 	return &Client{config: config}
 }
 
+func (c *Client) Connect() error {
+	conn, err := net.DialTimeout("tcp", c.config.ServerAddress, ConnectionTimeout)
+	if err != nil {
+		return err
+	}
+	c.conn = conn
+	return nil
+}
+
+func (c *Client) Close() {
+	if c.conn != nil {
+		c.conn.Close()
+	}
+}
+
 func (c *Client) StartClientLoop() {
-	log.Infof("Client %s starting loop...", c.config.ID)
+	log.Infof("action: start_client | result: success | client_id: %v | server_address: %v", c.config.ID, c.config.ServerAddress)
+	if err := c.Connect(); err != nil {
+		log.Errorf("action: connect | result: fail | client_id: %v | server_address: %v | error: %v", c.config.ID, c.config.ServerAddress, err)
+		return
+	}
+	defer c.Close()
+	log.Infof("action: connect | result: success | client_id: %v | server_address: %v", c.config.ID, c.config.ServerAddress)
 
 	shutdownChan := make(chan os.Signal, 1)
 	signal.Notify(shutdownChan, syscall.SIGINT, syscall.SIGTERM)
@@ -37,18 +60,20 @@ func (c *Client) StartClientLoop() {
 	for msgID := 1; msgID <= c.config.LoopAmount; msgID++ {
 		select {
 		case <-shutdownChan:
-			log.Infof("Client %s stopped due to shutdown signal", c.config.ID)
+			log.Infof("action: stop_client | result: success | client_id: %v", c.config.ID)
 			return
 		default:
 		}
 
-		bet, err := LoadBetFromEnv()
+		bet, err := loadBetFromEnv()
 		if err != nil {
 			log.Errorf("action: load_bet | result: fail | client_id: %v | error: %v", c.config.ID, err)
 			return
 		}
 
-		response, err := SendBet(c.config.ServerAddress, bet, c.config.ID)
+		payload := bet.Serialize(c.config.ID)
+
+		response, err := Send(c.conn, payload)
 		if err != nil {
 			var protocolErr ProtocolError
 			if errors.As(err, &protocolErr) {

@@ -50,42 +50,29 @@ func writeAll(conn net.Conn, msg []byte) error {
 func readUntilDelimiter(conn net.Conn, delimiter byte) ([]byte, error) {
 	buffer := make([]byte, 1024)
 	var responseBuf bytes.Buffer
-	var delimiterBytes = []byte{delimiter}
+
+	conn.SetReadDeadline(time.Now().Add(ReadTimeout))
+
 	for {
 		bytesRead, err := conn.Read(buffer)
 		if err != nil {
-			if err == io.EOF {
+			if err == io.EOF && responseBuf.Len() > 0 {
 				break
 			}
 			return nil, fmt.Errorf("failed to read data: %w", err)
 		}
+
 		responseBuf.Write(buffer[:bytesRead])
-		if bytes.Contains(buffer[:bytesRead], delimiterBytes) {
+
+		if bytes.Contains(buffer[:bytesRead], []byte{delimiter}) {
 			break
 		}
 	}
-
 	return responseBuf.Bytes(), nil
 }
 
-func SendBet(serverAddress string, bet Bet, agencyID string) (Response, error) {
-	conn, err := net.DialTimeout("tcp", serverAddress, ConnectionTimeout)
-	if err != nil {
-		return Response{}, fmt.Errorf("could not connect to server: %w", err)
-	}
-	defer conn.Close()
-
-	message := fmt.Sprintf(
-		"%s;%s;%s;%s;%s;%d\n",
-		agencyID,
-		bet.Name,
-		bet.Surname,
-		bet.ClientID,
-		bet.DateOfBirth,
-		bet.BetNumber,
-	)
-
-	if err := writeAll(conn, []byte(message)); err != nil {
+func Send(conn net.Conn, payload []byte) (Response, error) {
+	if err := writeAll(conn, payload); err != nil {
 		return Response{}, ProtocolError{Message: "failed to send message", Err: err}
 	}
 
@@ -98,7 +85,7 @@ func SendBet(serverAddress string, bet Bet, agencyID string) (Response, error) {
 	parts := strings.Split(strings.TrimSpace(responseStr), ";")
 	if len(parts) != 2 {
 		return Response{}, ProtocolError{
-			Message: fmt.Sprintf("invalid server response format: expected %d fields, got %d", 2, len(parts)),
+			Message: fmt.Sprintf("invalid server response format: expected 2 fields, got %d", len(parts)),
 		}
 	}
 
