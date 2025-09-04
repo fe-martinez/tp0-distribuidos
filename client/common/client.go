@@ -119,10 +119,9 @@ func (c *Client) StartClientLoop() {
 
 	winners, err := ReceiveWinners(c.conn)
 	if err != nil {
-		log.Errorf("action: receive_winners | result: fail | client_id: %s | error: %v", c.config.ID, err)
+		log.Errorf("action: consulta_ganadores | result: fail | client_id: %s | error: %v", c.config.ID, err)
 		return
 	}
 
-	log.Infof("action: receive_winners | result: success | client_id: %s | winners_count: %d",
-		c.config.ID, len(winners))
+	log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %d", len(winners))
 }
