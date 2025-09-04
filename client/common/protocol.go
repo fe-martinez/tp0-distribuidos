@@ -1,7 +1,7 @@
 package common
 
 import (
-	"bufio"
+	"bytes"
 	"fmt"
 	"net"
 	"strings"
@@ -46,6 +46,24 @@ func writeAll(conn net.Conn, msg []byte) error {
 	return nil
 }
 
+func readUntilDelimiter(conn net.Conn, delimiter byte) ([]byte, error) {
+	buffer := make([]byte, 1024)
+	var responseBuf bytes.Buffer
+	var delimiterBytes = []byte{delimiter}
+	for {
+		bytesRead, err := conn.Read(buffer)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read data: %w", err)
+		}
+		responseBuf.Write(buffer[:bytesRead])
+		if bytes.Contains(buffer[:bytesRead], delimiterBytes) {
+			break
+		}
+	}
+
+	return responseBuf.Bytes(), nil
+}
+
 func SendBet(serverAddress string, bet Bet, agencyID string) (Response, error) {
 	conn, err := net.DialTimeout("tcp", serverAddress, ConnectionTimeout)
 	if err != nil {
@@ -67,15 +85,12 @@ func SendBet(serverAddress string, bet Bet, agencyID string) (Response, error) {
 		return Response{}, ProtocolError{Message: "failed to send message", Err: err}
 	}
 
-	if err := conn.SetReadDeadline(time.Now().Add(ReadTimeout)); err != nil {
-		return Response{}, fmt.Errorf("failed to set read timeout: %w", err)
-	}
-
-	responseStr, err := bufio.NewReader(conn).ReadString('\n')
+	responseBytes, err := readUntilDelimiter(conn, '\n')
 	if err != nil {
 		return Response{}, ProtocolError{Message: "failed to receive response", Err: err}
 	}
 
+	responseStr := string(responseBytes)
 	parts := strings.Split(strings.TrimSpace(responseStr), ";")
 	if len(parts) != 2 {
 		return Response{}, ProtocolError{

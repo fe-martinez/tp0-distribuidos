@@ -26,9 +26,10 @@ class Server:
         logging.info(f'action: client_connection | result: success | ip: {addr[0]}')
         try:
             request_data = Protocol.receive_message(client_sock)
+            bet = Protocol.parse_bet_line(request_data)
             logging.info(f'action: receive_message | result: success | ip: {addr[0]}')
 
-            result = self._handler.process_bet(request_data)
+            result = self._handler.process_bet(bet)
 
             Protocol.send_response(client_sock, result)
             logging.info(f'action: send_response | result: success | ip: {addr[0]}')
