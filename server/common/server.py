@@ -97,11 +97,11 @@ class Server:
 
     def __shutdown(self):
         logging.info('action: shutdown | result: in_progress')
-        
-        for client_sock in self._active_connections[:]:
+
+        for conn_info in self._client_connections[:]:
             try:
-                logging.info(f"Closing connection with {client_sock.getpeername()}")
-                client_sock.close()
+                logging.info(f"Closing connection with {conn_info['address'][0]}")
+                conn_info["socket"].close()
             except (OSError, socket.error) as e:
                 logging.warning(f'action: close_client | result: success | client already_closed')
 
