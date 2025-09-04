@@ -53,13 +53,20 @@ class Server:
                 if payload_bytes == b'':
                     logging.info(f"action: client_connection | result: success | ip: {addr[0]} | status: client sent empty payload")
                     continue
-                
-                batch = Batch.from_payload(payload_bytes, Protocol.encoding, Protocol.field_separator)
+                                
+                try:
+                    batch = Batch.from_payload(payload_bytes, Protocol.encoding, Protocol.field_separator)
+                except ValueError as e:
+                    logging.error(f"action: apuesta_recibida | result: fail | error: {e} | ip: {addr[0]}")
+                    error_response_str = f"error{Protocol.field_separator}Invalid batch format: {e}"
+                    Protocol.send(client_sock, error_response_str.encode(Protocol.encoding))
+                    continue
+
                 if not conn_info["agency"]:
                     conn_info["agency"] = batch.agency_id
-                
+
                 result = self._handler.process_batch(batch)
-                
+
                 log_level = logging.INFO if result["status"] == "success" else logging.ERROR
                 logging.log(log_level, f'action: apuesta_recibida | result: {result["status"]} | cantidad: {len(batch.bets)}')
 
