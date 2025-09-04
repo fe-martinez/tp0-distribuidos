@@ -7,6 +7,7 @@ class Batch:
         self.agency_id = agency_id
         self.bets = bets
 
+    @classmethod
     def from_payload(cls, payload_bytes, encoding, separator):
         try:
             payload_str = payload_bytes.decode(encoding)
