@@ -1,7 +1,6 @@
 package common
 
 import (
-	"bufio"
 	"fmt"
 	"strings"
 )
@@ -26,54 +25,45 @@ func (b Bet) GetBytesSize() int {
 }
 
 type Batch struct {
-	Bets        []Bet
-	CurrentSize int
-	CurrentBets int
+	bets        []Bet
+	currentSize int
+	currentBets int
+	maxSize     int
+	maxBets     int
 }
 
-type BatchResult struct {
-	Batch       Batch
-	OverflowBet *Bet
+func NewBatch(maxSize int, maxBets int) *Batch {
+	return &Batch{
+		maxSize: maxSize,
+		maxBets: maxBets,
+		bets:    make([]Bet, 0),
+	}
 }
 
-func CreateBatch(scanner *bufio.Scanner, maxSize int, maxBets int, initialBet *Bet) (BatchResult, error) {
-	batch := Batch{}
-	var overflowBet *Bet
-
-	if initialBet != nil {
-		betSize := initialBet.GetBytesSize()
-		if betSize <= maxSize && 1 <= maxBets {
-			batch.Bets = append(batch.Bets, *initialBet)
-			batch.CurrentSize += betSize
-			batch.CurrentBets++
-		} else {
-			return BatchResult{Batch: batch, OverflowBet: initialBet}, nil
-		}
+func (b *Batch) Add(bet Bet) bool {
+	betSize := bet.GetBytesSize()
+	if (!b.IsEmpty() && b.currentSize+betSize > b.maxSize) || (!b.IsEmpty() && b.currentBets+1 > b.maxBets) {
+		return false
 	}
+	b.bets = append(b.bets, bet)
+	b.currentSize += betSize
+	b.currentBets++
+	return true
+}
 
-	for scanner.Scan() {
-		fields := strings.Split(scanner.Text(), ",")
-		if len(fields) != 5 {
-			continue
-		}
-
-		bet := Bet{fields[0], fields[1], fields[2], fields[3], fields[4]}
-		betSize := bet.GetBytesSize()
-
-		if (batch.CurrentSize+betSize > maxSize && batch.CurrentSize > 0) ||
-			(batch.CurrentBets+1 > maxBets && batch.CurrentBets > 0) {
-			overflowBet = &bet
-			break
-		}
-
-		batch.Bets = append(batch.Bets, bet)
-		batch.CurrentSize += betSize
-		batch.CurrentBets++
+func (b *Batch) Serialize(agencyID string) []byte {
+	var builder strings.Builder
+	builder.WriteString(fmt.Sprintf("%s;%d\n", agencyID, len(b.bets)))
+	for _, bet := range b.bets {
+		builder.WriteString(bet.SerializeBet())
 	}
+	return []byte(builder.String())
+}
 
-	if err := scanner.Err(); err != nil {
-		return BatchResult{}, fmt.Errorf("failed to scan input file: %w", err)
-	}
+func (b *Batch) IsEmpty() bool {
+	return len(b.bets) == 0
+}
 
-	return BatchResult{Batch: batch, OverflowBet: overflowBet}, nil
+func (b *Batch) BetCount() int {
+	return len(b.bets)
 }
