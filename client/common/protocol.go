@@ -81,7 +81,7 @@ func Receive(conn net.Conn, timeout time.Duration) ([]byte, error) {
 	}
 
 	if payloadLen == 0 {
-		return nil, nil
+		return []byte{}, nil
 	}
 
 	payloadBuf := make([]byte, payloadLen)
