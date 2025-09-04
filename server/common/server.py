@@ -31,7 +31,7 @@ class Server:
                     logging.info(f'action: client_connection | result: success | ip: {addr[0]} | status: client finished sending')
                     break
 
-                batch = Batch.from_payload(payload_bytes, Protocol.encoding, Protocol.separator)
+                batch = Batch.from_payload(payload_bytes, Protocol.encoding, Protocol.field_separator)
                 result = self._handler.process_batch(batch)
                 
                 if result["status"] == "success":

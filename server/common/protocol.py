@@ -1,5 +1,3 @@
-# FILE: common/protocol.py
-
 import socket
 
 class ProtocolError(Exception):
@@ -9,7 +7,7 @@ class Protocol:
     encoding = 'utf-8'
     buffer_size = 1024
     header_size = 8
-    separator = ';'
+    field_separator = ';'
 
     def _receive_all(client_sock, length):
         chunks = []
