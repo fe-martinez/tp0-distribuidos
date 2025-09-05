@@ -31,7 +31,7 @@ class Server:
                 client_sock, addr = self._server_socket.accept()
                 worker_thread = threading.Thread(target=self._handle_client_connection, args=(client_sock, addr))
                 with self._clients_lock:
-                    self._active_clients.append(worker_thread)
+                    self._active_clients.append((worker_thread, client_sock))
                 worker_thread.start()
             except socket.timeout:
                 continue
@@ -44,10 +44,12 @@ class Server:
 
         logging.info("action: waiting for client processing | result: success")
         with self._clients_lock:
-            threads = list(self._active_clients)
+            threads_to_join = [client[0] for client in self._active_clients]
 
-        for t in threads:
+        for t in threads_to_join:
             t.join()
+        
+        # In this case client sockets should already be closed by the use of 'with' in _handle_client_connection
 
         try:
             self._server_socket.close()
@@ -130,8 +132,12 @@ class Server:
         
         logging.info("action: shutdown | result: in_progress | message: joining active client threads")
         with self._clients_lock:
-            for t in self._active_clients:
-                if t.is_alive():
-                    t.join(timeout=1.0)
+            for thread, sock in self._active_clients:
+                if thread.is_alive():
+                    thread.join(timeout=1.0)
+                try:
+                    sock.close()
+                except Exception:
+                    pass
 
         logging.info("action: shutdown | result: success")
